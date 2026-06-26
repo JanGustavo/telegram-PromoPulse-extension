@@ -33,6 +33,7 @@
           <div id="user">
             <div class="user-badge">Verificando...</div>
           </div>
+          <button id="themeToggleBtn" class="btn-theme" title="Alternar Tema">🌓</button>
           <button id="logoutBtn" class="btn-logout">Sair</button>
         </div>
       </header>
@@ -294,6 +295,13 @@
               <input type="checkbox" id="smartAlertToggle" checked>
               <span class="slider"></span>
             </label>
+          </div>
+
+          <!-- Filtro de Alertas -->
+          <div class="alerts-filter-bar">
+            <input type="text" id="alertsSearchInput" placeholder="🔍 Buscar alertas..." class="filter-input-search" />
+            <input type="number" id="alertsMinPriceInput" placeholder="Min R$" class="filter-input-price" />
+            <input type="number" id="alertsMaxPriceInput" placeholder="Max R$" class="filter-input-price" />
           </div>
 
           <div id="alertsList" class="scroll-area">

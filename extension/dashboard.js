@@ -33,7 +33,16 @@ const state = {
   sound_selected: "classic.mp3",
   sound_volume: 0.8,
   smart_alert_enabled: true, // Sniper Mode
+  theme: "dark",
 };
+
+function applyThemeUI() {
+  if (state.theme === "light") {
+    document.body.classList.add("light-theme");
+  } else {
+    document.body.classList.remove("light-theme");
+  }
+}
 
 const BRANDS_MAP = {
   celulares: ["Apple", "Samsung", "Xiaomi", "Motorola", "Poco", "Realme", "Asus"],
@@ -106,6 +115,7 @@ async function saveState() {
     sound_selected: state.sound_selected,
     sound_volume: state.sound_volume,
     smart_alert_enabled: state.smart_alert_enabled,
+    theme: state.theme,
   });
 }
 
@@ -132,10 +142,12 @@ async function loadState() {
   state.sound_selected = saved.sound_selected || "classic.mp3";
   state.sound_volume = saved.sound_volume ?? 0.8;
   state.smart_alert_enabled = saved.smart_alert_enabled ?? true;
+  state.theme = saved.theme || "dark";
 
   if (saved.lastAlertId) lastAlertId = saved.lastAlertId;
 
   updateSoundUI();
+  applyThemeUI();
 }
 
 function updateSoundUI() {
@@ -464,7 +476,16 @@ async function loadAlerts() {
   if (!node) return;
 
   try {
-    const res = await fetch(`${API_BASE_URL}/alerts?limit=30`);
+    const q = document.getElementById("alertsSearchInput")?.value.trim() || "";
+    const minPrice = document.getElementById("alertsMinPriceInput")?.value || "";
+    const maxPrice = document.getElementById("alertsMaxPriceInput")?.value || "";
+
+    const params = new URLSearchParams({ limit: 30 });
+    if (q) params.append("q", q);
+    if (minPrice) params.append("min_price", minPrice);
+    if (maxPrice) params.append("max_price", maxPrice);
+
+    const res = await fetch(`${API_BASE_URL}/alerts?${params.toString()}`);
     const data = await res.json();
     const rawAlerts = Array.isArray(data.alerts) ? data.alerts : [];
 
@@ -641,6 +662,18 @@ function renderMidBrands() {
 }
 
 function bindEvents() {
+  document.getElementById("themeToggleBtn")?.addEventListener("click", async () => {
+    state.theme = state.theme === "light" ? "dark" : "light";
+    applyThemeUI();
+    await saveState();
+  });
+
+  ["alertsSearchInput", "alertsMinPriceInput", "alertsMaxPriceInput"].forEach((id) => {
+    document.getElementById(id)?.addEventListener("input", () => {
+      loadAlerts();
+    });
+  });
+
   document.querySelectorAll(".level-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
       state.current_tab = btn.dataset.level;

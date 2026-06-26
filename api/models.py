@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 from typing import Optional
-from pydantic import BaseModel, Field
 
+from pydantic import BaseModel, Field
 
 # ===========================================================================
 # AUTH
 # ===========================================================================
+
 
 class PhoneRequest(BaseModel):
     phone_number: str = Field(
@@ -28,12 +29,14 @@ class LoginRequest(BaseModel):
 # GRUPOS
 # ===========================================================================
 
+
 class GroupItem(BaseModel):
     id: int
     title: str
     username: Optional[str] = None
     link: Optional[str] = None
     auto_filtered: bool
+
 
 class GroupsResponse(BaseModel):
     groups: list[GroupItem]
@@ -45,6 +48,7 @@ class FilterPreviewItem(BaseModel):
     auto_filtered: bool
     blocked_by: list[str]
 
+
 class FilterPreviewResponse(BaseModel):
     groups: list[FilterPreviewItem]
 
@@ -52,6 +56,7 @@ class FilterPreviewResponse(BaseModel):
 # ===========================================================================
 # CONFIGURAÇÃO DE MONITORAMENTO
 # ===========================================================================
+
 
 class WatchConfigRequest(BaseModel):
     active_levels: list[str] = Field(
@@ -120,6 +125,7 @@ class WatchConfigResponse(BaseModel):
 # CONTROLE DE MONITORAMENTO
 # ===========================================================================
 
+
 class StartWatchRequest(BaseModel):
     group_ids: list[int] = Field(
         ...,
@@ -148,6 +154,7 @@ class WatchStatusResponse(BaseModel):
 # ALERTAS
 # ===========================================================================
 
+
 class AlertItem(BaseModel):
     group_id: int
     group_title: str
@@ -160,6 +167,7 @@ class AlertItem(BaseModel):
     link: Optional[str] = None
     clean_title: Optional[str] = None
 
+
 class AlertsResponse(BaseModel):
     alerts: list[AlertItem]
 
@@ -167,6 +175,7 @@ class AlertsResponse(BaseModel):
 # ===========================================================================
 # TESTE DE OFERTA
 # ===========================================================================
+
 
 class OfferRequest(BaseModel):
     text: str = Field(

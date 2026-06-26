@@ -724,7 +724,7 @@ textarea {
     border: 1px solid var(--border-color);
     border-radius: 10px;
     padding: 9px 14px;
-    color: white;
+    color: var(--text-main);
     font-size: 13px;
     font-family: inherit;
     outline: none;
@@ -985,6 +985,30 @@ textarea {
     box-shadow: none;
 }
 
+/* Botão de alternância de tema */
+.btn-theme {
+    padding: 10px 14px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-full);
+    background: var(--input-bg);
+    color: var(--text-main);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all var(--transition);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.btn-theme:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.light-theme .btn-theme:hover {
+    background: rgba(15, 23, 42, 0.05);
+}
+
 /* Botão secundário — Sair */
 .btn-logout {
     padding: 10px 14px;
@@ -1140,4 +1164,100 @@ textarea {
         font-size: 14px;
         padding: 14px;
     }
+}
+
+/* =============================================================================
+   Filtro de Alertas
+============================================================================= */
+.alerts-filter-bar {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.filter-input-search {
+    flex: 2;
+    padding: 8px 12px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-color);
+    background: var(--input-bg);
+    color: var(--text-main);
+    font-size: 12px;
+    outline: none;
+    transition: border-color var(--transition);
+}
+
+.filter-input-search:focus {
+    border-color: var(--primary);
+}
+
+.filter-input-price {
+    flex: 1;
+    padding: 8px 12px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-color);
+    background: var(--input-bg);
+    color: var(--text-main);
+    font-size: 12px;
+    outline: none;
+    min-width: 0;
+    transition: border-color var(--transition);
+}
+
+.filter-input-price:focus {
+    border-color: var(--primary);
+}
+
+/* =============================================================================
+   Tema Claro (Light Theme)
+============================================================================= */
+.light-theme {
+    --bg-dark: #f1f5f9;                 /* slate-100 */
+    --card-bg: rgba(255, 255, 255, 0.85); /* white semi-transparent */
+    --input-bg: rgba(255, 255, 255, 0.95);
+    --text-main: #0f172a;               /* slate-900 */
+    --text-muted: #475569;              /* slate-600 */
+    --border-color: rgba(15, 23, 42, 0.1);
+}
+
+.light-theme .brand-pill {
+    color: var(--text-main);
+    background: var(--input-bg);
+    border-color: var(--border-color);
+}
+
+.light-theme .cat-card {
+    background: var(--input-bg);
+    color: var(--text-main);
+    border: 1px solid var(--border-color);
+}
+
+.light-theme .btn-logout {
+    color: var(--text-main);
+    border-color: var(--border-color);
+}
+
+.light-theme .btn-logout:hover {
+    background: rgba(15, 23, 42, 0.05);
+}
+
+.light-theme .btn-small {
+    color: var(--text-main);
+    background: var(--input-bg);
+    border-color: var(--border-color);
+}
+
+.light-theme .sound-settings-bar,
+.light-theme .alerts-filter-bar input {
+    background: var(--input-bg);
+    border-color: var(--border-color);
+}
+
+.light-theme .alert-item {
+    background: rgba(255, 255, 255, 0.7);
+    border-color: var(--border-color);
+}
+
+.light-theme .alert-text {
+    color: var(--text-main);
 }
