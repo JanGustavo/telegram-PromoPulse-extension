@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.2] - 2026-07-01
+
+### 🔔 Notificações Enriquecidas do Chrome (Fase 3)
+- **Integração com `chrome.notifications`:** Substituição da API de notificações padrão do navegador pelo recurso avançado de Notificações Ricas do Chrome.
+- **Preview de Imagens de Produtos:** A notificação agora exibe dinamicamente a foto real do produto e o preço extraído em alta qualidade quando capturado pelo Radar.
+- **Ações Rápidas na Notificação:** Adicionado o botão "Ir para a Oferta ➔" diretamente na notificação nativa do sistema. Ao clicar, o navegador abre a oferta automaticamente em uma nova aba do Chrome.
+
 ## [1.5.1] - 2026-07-01
 
 ### 🎯 Personalização Avançada de Alertas (Fase 3)

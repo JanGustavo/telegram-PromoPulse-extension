@@ -816,23 +816,66 @@ function bindEvents() {
   });
 }
 
-function notify(alert){
-  if(Notification.permission === "granted"){
-    const n = new Notification(`🚨 ${alert.group_title}`, {
-      body: alert.message.slice(0, 120),
-    });
+const notificationLinks = new Map();
 
-    if(alert.link){
-      n.onclick = () => {
-        window.open(alert.link, "_blank");
-      };
+if (typeof chrome !== "undefined" && chrome.notifications) {
+  chrome.notifications.onButtonClicked.addListener((notifId, btnIdx) => {
+    const link = notificationLinks.get(notifId);
+    if (link && btnIdx === 0) {
+      if (typeof chrome !== "undefined" && chrome.tabs) {
+        chrome.tabs.create({ url: link });
+      } else {
+        window.open(link, "_blank");
+      }
+    }
+  });
+}
+
+function notify(alert) {
+  if (typeof chrome !== "undefined" && chrome.notifications) {
+    const options = {
+      type: "basic",
+      iconUrl: chrome.runtime.getURL("telegram_logo_128.png"),
+      title: `🚨 ${alert.group_title || "Nova Oferta!"}`,
+      message: alert.clean_title || alert.message || "",
+      contextMessage: alert.extracted_price
+        ? `R$ ${Number(alert.extracted_price).toLocaleString("pt-BR")}`
+        : "Oferta detectada",
+      priority: 2,
+    };
+
+    if (alert.image_url) {
+      options.type = "image";
+      options.imageUrl = `${API_BASE_URL}/media/${alert.image_url}`;
+    }
+
+    const notificationId = `alert_${alert.group_id}_${alert.message_id}`;
+
+    if (alert.link) {
+      options.buttons = [{ title: "Ir para a Oferta ➔" }];
+      notificationLinks.set(notificationId, alert.link);
+    }
+
+    chrome.notifications.create(notificationId, options);
+  } else {
+    if (Notification.permission === "granted") {
+      const n = new Notification(`🚨 ${alert.group_title}`, {
+        body: (alert.clean_title || alert.message || "").slice(0, 120),
+        icon: "telegram_logo_128.png"
+      });
+
+      if (alert.link) {
+        n.onclick = () => {
+          window.open(alert.link, "_blank");
+        };
+      }
     }
   }
-  
+
   // LÓGICA DE SOM INTELIGENTE
   let soundToPlay = null;
   if (state.smart_alert_enabled && state.price_max && alert.extracted_price) {
-    const threshold = state.price_max * 0.6; 
+    const threshold = state.price_max * 0.6;
     if (alert.extracted_price <= threshold) {
       soundToPlay = "urgent.mp3";
     }
