@@ -268,6 +268,7 @@
           <div class="card-header">
             <h3>🔔 Alertas</h3>
             <div class="header-actions">
+              <button id="startTourBtn" class="btn-small btn-icon" title="Iniciar Tutorial" style="margin-right: 4px;">❓ Tutorial</button>
               <button id="toggleSoundBtn" class="btn-small btn-icon" title="Alternar Som">🔊</button>
               <button id="clearAlertsBtn" class="btn-small">Limpar</button>
             </div>
@@ -294,6 +295,15 @@
               <input type="checkbox" id="smartAlertToggle" checked>
               <span class="slider"></span>
             </label>
+          </div>
+
+          <!-- Abas de categorias -->
+          <div class="alerts-tabs">
+            <button class="tab-btn active" data-category="all">Todos</button>
+            <button class="tab-btn" data-category="celulares">📱 Celulares</button>
+            <button class="tab-btn" data-category="informatica">💻 Informática</button>
+            <button class="tab-btn" data-category="games">🎮 Games</button>
+            <button class="tab-btn" data-category="casa_eletro">🏠 Casa/Eletro</button>
           </div>
 
           <!-- Filtro de Alertas -->

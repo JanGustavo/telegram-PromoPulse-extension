@@ -1,5 +1,6 @@
 import unittest
 
+from api import db
 from api.server import (
     WATCH_CONFIG,
     _clean_product_name,
@@ -113,6 +114,51 @@ class TestServerLogic(unittest.TestCase):
             # Restore configuration
             WATCH_CONFIG.clear()
             WATCH_CONFIG.update(old_config)
+
+    def test_price_drop_calculation(self):
+        db.init_db()
+        db.clear_alerts()
+
+        alert1 = {
+            "group_id": 1234,
+            "group_title": "Ofertas",
+            "message": "iPhone 15 Pro Max por R$ 5.000",
+            "message_id": 1,
+            "extracted_price": 5000.0,
+            "clean_title": "iPhone 15 Pro Max",
+            "offer_score": 5,
+        }
+        db.save_alert(alert1)
+
+        alert2 = {
+            "group_id": 1234,
+            "group_title": "Ofertas",
+            "message": "iPhone 15 Pro Max por R$ 4.000",
+            "message_id": 2,
+            "extracted_price": 4000.0,
+            "clean_title": "iPhone 15 Pro Max",
+            "offer_score": 5,
+        }
+        db.save_alert(alert2)
+
+        alerts = db.get_alerts(limit=5)
+        item2 = next(a for a in alerts if a["message_id"] == 2)
+        self.assertEqual(item2["price_drop_percentage"], 20)
+
+        alert3 = {
+            "group_id": 1234,
+            "group_title": "Ofertas",
+            "message": "iPhone 15 Pro Max por R$ 4.500",
+            "message_id": 3,
+            "extracted_price": 4500.0,
+            "clean_title": "iPhone 15 Pro Max",
+            "offer_score": 5,
+        }
+        db.save_alert(alert3)
+
+        alerts = db.get_alerts(limit=5)
+        item3 = next(a for a in alerts if a["message_id"] == 3)
+        self.assertEqual(item3["price_drop_percentage"], 0)
 
 
 if __name__ == "__main__":

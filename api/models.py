@@ -167,6 +167,7 @@ class AlertItem(BaseModel):
     link: Optional[str] = None
     clean_title: Optional[str] = None
     image_url: Optional[str] = None
+    price_drop_percentage: Optional[int] = 0
 
 
 class AlertsResponse(BaseModel):

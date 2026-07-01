@@ -34,6 +34,7 @@ const state = {
   sound_volume: 0.8,
   smart_alert_enabled: true, // Sniper Mode
   theme: "dark",
+  filter_category: "all",
 };
 
 function applyThemeUI() {
@@ -496,6 +497,9 @@ async function loadAlerts() {
     if (q) params.append("q", q);
     if (minPrice) params.append("min_price", minPrice);
     if (maxPrice) params.append("max_price", maxPrice);
+    if (state.filter_category && state.filter_category !== "all") {
+      params.append("category", state.filter_category);
+    }
 
     const res = await fetch(`${API_BASE_URL}/alerts?${params.toString()}`);
     const data = await res.json();
@@ -554,10 +558,14 @@ async function loadAlerts() {
              </div>`
           : "";
 
+        const dropBadge = a.price_drop_percentage && a.price_drop_percentage > 0
+          ? `<span class="price-drop-badge">📉 Queda de ${a.price_drop_percentage}%!</span>`
+          : "";
+
         return `
         <div class="alert-item ${isCritical ? 'critical' : ''}">
           <div class="alert-header">
-            <span class="alert-group">${escapeHtml(a.group_title || a.group_id)}</span>
+            <span class="alert-group">${escapeHtml(a.group_title || a.group_id)} ${dropBadge}</span>
             ${price ? `<span class="alert-price">${price}</span>` : ""}
           </div>
           ${imageHtml}
@@ -758,6 +766,17 @@ function bindEvents() {
     loadAlerts();
   });
 
+  document.querySelectorAll(".tab-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      state.filter_category = btn.dataset.category;
+      loadAlerts();
+    });
+  });
+
+  document.getElementById("startTourBtn")?.addEventListener("click", startTour);
+
   // --- CONTROLES DE SOM ---
   document.getElementById("toggleSoundBtn")?.addEventListener("click", async () => {
     state.sound_enabled = !state.sound_enabled;
@@ -837,7 +856,9 @@ function notify(alert) {
       type: "basic",
       iconUrl: chrome.runtime.getURL("telegram_logo_128.png"),
       title: `🚨 ${alert.group_title || "Nova Oferta!"}`,
-      message: alert.clean_title || alert.message || "",
+      message: alert.price_drop_percentage
+        ? `📉 Queda de ${alert.price_drop_percentage}%! - ${alert.clean_title || alert.message || ""}`
+        : (alert.clean_title || alert.message || ""),
       contextMessage: alert.extracted_price
         ? `R$ ${Number(alert.extracted_price).toLocaleString("pt-BR")}`
         : "Oferta detectada",
@@ -859,7 +880,10 @@ function notify(alert) {
     chrome.notifications.create(notificationId, options);
   } else {
     if (Notification.permission === "granted") {
-      const n = new Notification(`🚨 ${alert.group_title}`, {
+      const titleText = alert.price_drop_percentage
+        ? `📉 Queda de ${alert.price_drop_percentage}%! - ${alert.group_title}`
+        : `🚨 ${alert.group_title}`;
+      const n = new Notification(titleText, {
         body: (alert.clean_title || alert.message || "").slice(0, 120),
         icon: "telegram_logo_128.png"
       });
@@ -963,6 +987,17 @@ async function init() {
   if ("Notification" in window && Notification.permission !== "granted") {
     Notification.requestPermission();
   }
+
+  const tourCompleted = await new Promise((resolve) => {
+    if (typeof chrome !== "undefined" && chrome.storage?.local) {
+      chrome.storage.local.get(["tourCompleted"], (res) => resolve(res.tourCompleted));
+    } else {
+      resolve(localStorage.getItem("tourCompleted") === "true");
+    }
+  });
+  if (!tourCompleted) {
+    setTimeout(startTour, 1000);
+  }
 }
 
 async function togglePriceChart(msgId) {
@@ -1035,6 +1070,112 @@ function renderPriceChartSVG(data, width = 300, height = 80) {
       `).join('')}
     </svg>
   `;
+}
+
+let tourStep = 0;
+const tourSteps = [
+  {
+    elementId: "startScannerBtn",
+    title: "🚀 Iniciar Monitoramento",
+    description: "Clique aqui para iniciar ou parar o radar de ofertas em tempo real."
+  },
+  {
+    elementId: "panel-broad",
+    title: "🎯 Níveis de Filtro",
+    description: "Navegue pelas abas para configurar filtros Amplos, por Marcas ou Atirador de Elite."
+  },
+  {
+    elementId: "priceMaxInput",
+    title: "💸 Preço Máximo",
+    description: "Opcional: Defina um preço máximo global ou específico por modelo para descartar ofertas caras."
+  },
+  {
+    elementId: "alertsList",
+    title: "🔔 Lista de Alertas",
+    description: "Aqui as ofertas capturadas serão exibidas. Você pode filtrar por abas e ver o histórico de preços."
+  }
+];
+
+function startTour() {
+  tourStep = 0;
+  showTourStep();
+}
+
+function showTourStep() {
+  document.querySelectorAll(".tour-overlay, .tour-popover").forEach(el => el.remove());
+  document.querySelectorAll(".tour-highlight").forEach(el => el.classList.remove("tour-highlight"));
+
+  if (tourStep >= tourSteps.length) {
+    if (typeof chrome !== "undefined" && chrome.storage?.local) {
+      chrome.storage.local.set({ tourCompleted: true });
+    } else {
+      localStorage.setItem("tourCompleted", "true");
+    }
+    return;
+  }
+
+  const step = tourSteps[tourStep];
+  let targetEl = document.getElementById(step.elementId);
+  if (!targetEl) {
+    tourStep++;
+    showTourStep();
+    return;
+  }
+
+  if (step.elementId === "panel-broad") {
+    state.current_tab = "broad";
+    renderLevelPanel();
+    targetEl = document.getElementById("panel-broad");
+  }
+
+  targetEl.classList.add("tour-highlight");
+
+  const overlay = document.createElement("div");
+  overlay.className = "tour-overlay";
+  document.body.appendChild(overlay);
+
+  const popover = document.createElement("div");
+  popover.className = "tour-popover";
+
+  const rect = targetEl.getBoundingClientRect();
+  const popoverHeight = 110;
+  const popoverWidth = 260;
+
+  let top = rect.top + window.scrollY - popoverHeight - 20;
+  if (top < 10) {
+    top = rect.bottom + window.scrollY + 10;
+  }
+  let left = rect.left + window.scrollX + (rect.width - popoverWidth) / 2;
+  if (left < 10) left = 10;
+  if (left + popoverWidth > window.innerWidth) {
+    left = window.innerWidth - popoverWidth - 10;
+  }
+
+  popover.style.top = `${top}px`;
+  popover.style.left = `${left}px`;
+
+  const isLast = tourStep === tourSteps.length - 1;
+
+  popover.innerHTML = `
+    <h4>${step.title}</h4>
+    <p>${step.description}</p>
+    <div class="tour-actions">
+      <button class="tour-btn-skip">Pular</button>
+      <button class="tour-btn-next">${isLast ? "Concluir" : "Próximo"}</button>
+    </div>
+  `;
+
+  document.body.appendChild(popover);
+
+  popover.querySelector(".tour-btn-next").addEventListener("click", () => {
+    tourStep++;
+    showTourStep();
+  });
+
+  popover.querySelector(".tour-btn-skip").addEventListener("click", () => {
+    tourStep = tourSteps.length;
+    showTourStep();
+  });
 }
 
 document.addEventListener("DOMContentLoaded", init);

@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.5.3] - 2026-07-01
+
+### 📈 Queda de Preços & Experiência de Usuário (Fase 3)
+- **Detecção de Queda de Preço:** Comparação automática de cada oferta com o preço histórico mínimo gravado no SQLite, computando o percentual de desconto em tempo real.
+- **Badge e Alertas:** Exibição de um selo neon laranja animado ("Queda de X%!") nos cards de ofertas e inclusão do detalhe nos pushes do Chrome.
+- **Abas de Categorias:** Filtragem dinâmica de alertas por abas de categorias (Celulares, Informática, Games, etc.) na interface da extensão.
+- **Tutorial Interativo:** Sistema de tour guiado integrado ao dashboard (com highlights de elementos e popovers flutuantes explicativos).
+- **Documentação de Arquitetura:** Criado o guia `CONTRIBUTING.md` com diagramas em Mermaid e explicações sobre o banco e setup.
+
 ## [1.5.2] - 2026-07-01
 
 ### 🔔 Notificações Enriquecidas do Chrome (Fase 3)

@@ -1,7 +1,7 @@
 {
    "manifest_version": 3,
    "name": "Telegram PromoPulse",
-   "version": "1.5.2",
+   "version": "1.5.3",
    "description": "Extensão para autenticar e abrir o painel do Telegram PromoPulse.",
    "action": {
 	   "default_title": "Telegram PromoPulse",

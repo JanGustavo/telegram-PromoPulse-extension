@@ -34,12 +34,19 @@ def init_db():
                 link TEXT,
                 clean_title TEXT,
                 image_url TEXT,
+                price_drop_percentage INTEGER DEFAULT 0,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
         # Migration to add image_url if database already exists
         try:
             conn.execute("ALTER TABLE alerts ADD COLUMN image_url TEXT")
+        except sqlite3.OperationalError:
+            pass  # column already exists
+
+        # Migration to add price_drop_percentage if database already exists
+        try:
+            conn.execute("ALTER TABLE alerts ADD COLUMN price_drop_percentage INTEGER DEFAULT 0")
         except sqlite3.OperationalError:
             pass  # column already exists
 
@@ -103,14 +110,34 @@ def load_monitoring_state() -> tuple[bool, list[int]]:
         return active, groups
 
 
+def get_min_historical_price(clean_title: str) -> float | None:
+    if not clean_title or clean_title == "Produto não identificado":
+        return None
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT MIN(extracted_price) FROM alerts WHERE clean_title = ? AND extracted_price IS NOT NULL",
+            (clean_title,),
+        ).fetchone()
+        return row[0] if row and row[0] is not None else None
+
+
 def save_alert(alert: dict) -> int:
+    clean_title = alert.get("clean_title")
+    extracted_price = alert.get("extracted_price")
+    price_drop = 0
+
+    if clean_title and clean_title != "Produto não identificado" and extracted_price is not None:
+        min_price = get_min_historical_price(clean_title)
+        if min_price is not None and extracted_price < min_price:
+            price_drop = round(((min_price - extracted_price) / min_price) * 100)
+
     with get_connection() as conn:
         cursor = conn.execute(
             """
             INSERT INTO alerts (
                 group_id, group_title, username, message, message_id,
-                offer_score, offer_categories, extracted_price, link, clean_title, image_url
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                offer_score, offer_categories, extracted_price, link, clean_title, image_url, price_drop_percentage
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
             (
                 alert["group_id"],
@@ -120,10 +147,11 @@ def save_alert(alert: dict) -> int:
                 alert["message_id"],
                 alert.get("offer_score"),
                 json.dumps(alert.get("offer_categories") or []),
-                alert.get("extracted_price"),
+                extracted_price,
                 alert.get("link"),
-                alert.get("clean_title"),
+                clean_title,
                 alert.get("image_url"),
+                price_drop,
             ),
         )
         conn.execute("""
@@ -142,6 +170,25 @@ def update_alert_details(
     image_url: str | None = None,
 ):
     with get_connection() as conn:
+        if clean_title is None or extracted_price is None:
+            row = conn.execute("SELECT clean_title, extracted_price FROM alerts WHERE id = ?", (alert_id,)).fetchone()
+            if row:
+                if clean_title is None:
+                    clean_title = row["clean_title"]
+                if extracted_price is None:
+                    extracted_price = row["extracted_price"]
+
+        price_drop = 0
+        if clean_title and extracted_price is not None:
+            row_min = conn.execute(
+                "SELECT MIN(extracted_price) FROM alerts WHERE clean_title = ? AND id != ? AND extracted_price IS NOT NULL",
+                (clean_title, alert_id),
+            ).fetchone()
+            if row_min and row_min[0] is not None:
+                min_price = row_min[0]
+                if extracted_price < min_price:
+                    price_drop = round(((min_price - extracted_price) / min_price) * 100)
+
         fields = []
         params = []
         if clean_title is not None:
@@ -150,6 +197,8 @@ def update_alert_details(
         if extracted_price is not None:
             fields.append("extracted_price = ?")
             params.append(extracted_price)
+            fields.append("price_drop_percentage = ?")
+            params.append(price_drop)
         if image_url is not None:
             fields.append("image_url = ?")
             params.append(image_url)
@@ -216,6 +265,9 @@ def get_alerts(
                     "link": row["link"],
                     "clean_title": row["clean_title"],
                     "image_url": row["image_url"] if "image_url" in row.keys() else None,
+                    "price_drop_percentage": (
+                        row["price_drop_percentage"] if "price_drop_percentage" in row.keys() else 0
+                    ),
                 }
             )
 

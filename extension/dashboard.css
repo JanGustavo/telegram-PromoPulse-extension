@@ -1365,3 +1365,172 @@ textarea {
 .light-theme .alert-text {
     color: var(--text-main);
 }
+
+/* =============================================================================
+   10. ABAS DE CATEGORIAS & TUTORIAL INTERATIVO
+   ============================================================================= */
+.alerts-tabs {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 12px;
+    overflow-x: auto;
+    padding-bottom: 4px;
+    scrollbar-width: thin;
+}
+
+.tab-btn {
+    padding: 6px 12px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--border-color);
+    color: var(--text-muted);
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all var(--transition);
+    white-space: nowrap;
+}
+
+.tab-btn:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--text-main);
+}
+
+.tab-btn.active {
+    background: var(--primary);
+    color: white;
+    border-color: var(--primary);
+    box-shadow: 0 4px 10px -2px rgba(0, 136, 204, 0.25);
+}
+
+.light-theme .tab-btn {
+    background: rgba(15, 23, 42, 0.03);
+}
+
+.light-theme .tab-btn:hover {
+    background: rgba(15, 23, 42, 0.06);
+}
+
+/* Tour Popover Overlay */
+.tour-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(0, 0, 0, 0.4);
+    z-index: 10000;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+}
+
+.tour-popover {
+    position: absolute;
+    width: 260px;
+    padding: 16px;
+    background: rgba(30, 41, 59, 0.95);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 12px;
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 10px 10px -5px rgba(0, 0, 0, 0.4);
+    color: var(--text-main);
+    z-index: 10001;
+    pointer-events: auto;
+    font-family: inherit;
+    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    animation: popoverFadeIn 0.3s ease;
+}
+
+.light-theme .tour-popover {
+    background: rgba(255, 255, 255, 0.95);
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    box-shadow: 0 20px 25px -5px rgba(15, 23, 42, 0.1), 0 10px 10px -5px rgba(15, 23, 42, 0.05);
+}
+
+@keyframes popoverFadeIn {
+    from { transform: scale(0.95); opacity: 0; }
+    to { transform: scale(1); opacity: 1; }
+}
+
+.tour-popover h4 {
+    margin: 0 0 6px 0;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--primary);
+}
+
+.tour-popover p {
+    margin: 0 0 12px 0;
+    font-size: 11px;
+    line-height: 1.4;
+    color: var(--text-muted);
+}
+
+.tour-actions {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.tour-btn-next {
+    padding: 5px 12px;
+    background: var(--primary);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-size: 10px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.tour-btn-next:hover {
+    background: var(--primary-hover);
+}
+
+.tour-btn-skip {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-size: 10px;
+    font-weight: 500;
+    cursor: pointer;
+    padding: 0;
+}
+
+.tour-btn-skip:hover {
+    color: var(--text-main);
+    text-decoration: underline;
+}
+
+/* Elemento destacado */
+.tour-highlight {
+    position: relative;
+    z-index: 10002 !important;
+    box-shadow: 0 0 0 4px var(--primary) !important;
+    pointer-events: none;
+    transition: box-shadow 0.3s ease;
+}
+
+/* Badge de Queda de Preço */
+.price-drop-badge {
+    background: linear-gradient(135deg, #f97316 0%, #ea580c 100%);
+    color: white;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: 6px;
+    margin-left: 6px;
+    display: inline-flex;
+    align-items: center;
+    box-shadow: 0 0 10px rgba(249, 115, 22, 0.4);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    animation: badgePulse 2s infinite alternate;
+}
+
+@keyframes badgePulse {
+    from { box-shadow: 0 0 8px rgba(249, 115, 22, 0.4); transform: scale(1); }
+    to { box-shadow: 0 0 14px rgba(249, 115, 22, 0.7); transform: scale(1.02); }
+}
