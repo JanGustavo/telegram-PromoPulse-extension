@@ -21,3 +21,4 @@ sessions/*.session
 Thumbs.db
 .vscode/
 .session
+deploy.sh
