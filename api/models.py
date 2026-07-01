@@ -166,6 +166,7 @@ class AlertItem(BaseModel):
     extracted_price: Optional[float] = None
     link: Optional[str] = None
     clean_title: Optional[str] = None
+    image_url: Optional[str] = None
 
 
 class AlertsResponse(BaseModel):
@@ -192,3 +193,12 @@ class OfferTestResponse(BaseModel):
     extracted_price: Optional[float] = None
     level_match: bool
     current_level: str
+
+
+class PriceHistoryItem(BaseModel):
+    price: float
+    date: str
+
+
+class PriceHistoryResponse(BaseModel):
+    history: list[PriceHistoryItem]

@@ -523,26 +523,40 @@ async function loadAlerts() {
             if (a.extracted_price <= (state.price_max * 0.6)) isCritical = true;
         }
 
+        // --- Imagem do Produto ---
+        const imageHtml = a.image_url
+          ? `<div class="alert-image-container">
+               <img src="${API_BASE_URL}/media/${a.image_url}" class="alert-image" alt="Imagem do Alerta" loading="lazy" />
+             </div>`
+          : "";
+
+        // --- Botão de Ação e Histórico ---
+        const chartBtnHtml = a.extracted_price
+          ? `<button class="btn-alert-chart" data-message-id="${a.message_id}">📈 Histórico</button>`
+          : "";
+
+        const actionHtml = (a.link || a.extracted_price)
+          ? `<div class="alert-actions">
+               ${chartBtnHtml}
+               ${a.link ? `<a href="${a.link}" target="_blank" class="btn-alert-link">Ir para a Oferta ➔</a>` : ""}
+             </div>`
+          : "";
+
         return `
         <div class="alert-item ${isCritical ? 'critical' : ''}">
           <div class="alert-header">
-           ${
-             a.link
-               ? `<a href="${a.link}" target="_blank" class="alert-group-link">
-                  🔗 ${escapeHtml(a.group_title || a.group_id)}
-            </a>`
-               : `<span class="alert-group">
-         ${escapeHtml(a.group_title || a.group_id)}
-       </span>`
-           }
+            <span class="alert-group">${escapeHtml(a.group_title || a.group_id)}</span>
             ${price ? `<span class="alert-price">${price}</span>` : ""}
           </div>
+          ${imageHtml}
           <p class="alert-text">${escapeHtml((a.message || "").slice(0, 200))}</p>
           <div class="alert-meta">
             <span>Score ${a.offer_score}/5</span>
             ${cats ? `<span>${cats}</span>` : ""}
             ${a.timestamp ? `<span>${new Date(a.timestamp).toLocaleTimeString("pt-BR")}</span>` : ""}
           </div>
+          <div id="chart-container-${a.message_id}" class="alert-chart-container" style="display: none;"></div>
+          ${actionHtml}
         </div>`;
       })
       .join("");
@@ -662,6 +676,14 @@ function renderMidBrands() {
 }
 
 function bindEvents() {
+  document.getElementById("alertsList")?.addEventListener("click", async (e) => {
+    const chartBtn = e.target.closest(".btn-alert-chart");
+    if (chartBtn) {
+      const msgId = chartBtn.dataset.messageId;
+      await togglePriceChart(msgId);
+    }
+  });
+
   document.getElementById("themeToggleBtn")?.addEventListener("click", async () => {
     state.theme = state.theme === "light" ? "dark" : "light";
     applyThemeUI();
@@ -886,6 +908,78 @@ async function init() {
   if ("Notification" in window && Notification.permission !== "granted") {
     Notification.requestPermission();
   }
+}
+
+async function togglePriceChart(msgId) {
+  const container = document.getElementById(`chart-container-${msgId}`);
+  if (!container) return;
+
+  if (container.style.display === "block") {
+    container.style.display = "none";
+    return;
+  }
+
+  container.style.display = "block";
+  container.innerHTML = `<div style="font-size: 10px; color: var(--text-muted); text-align: center; padding: 10px;">Carregando histórico...</div>`;
+
+  try {
+    const res = await fetch(`${API_BASE_URL}/alerts/${msgId}/price-history`);
+    const data = await res.json();
+    const history = data.history || [];
+    
+    container.innerHTML = renderPriceChartSVG(history);
+  } catch (err) {
+    container.innerHTML = `<div style="font-size: 10px; color: var(--error); text-align: center; padding: 10px;">Erro ao carregar histórico.</div>`;
+  }
+}
+
+function renderPriceChartSVG(data, width = 300, height = 80) {
+  if (!data || data.length < 2) {
+    return `<div style="font-size: 10px; color: var(--text-muted); text-align: center; padding: 10px;">Preços insuficientes para gráfico histórico.</div>`;
+  }
+
+  const prices = data.map(d => d.price);
+  const minP = Math.min(...prices);
+  const maxP = Math.max(...prices);
+  const range = maxP - minP || 1;
+
+  const padMin = minP - range * 0.1;
+  const padMax = maxP + range * 0.1;
+  const padRange = padMax - padMin;
+
+  const points = data.map((d, index) => {
+    const x = (index / (data.length - 1)) * (width - 20) + 10;
+    const y = height - ((d.price - padMin) / padRange) * (height - 20) - 10;
+    return { x, y, price: d.price, date: d.date };
+  });
+
+  const pathD = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
+  const areaD = `${pathD} L ${points[points.length - 1].x} ${height} L ${points[0].x} ${height} Z`;
+
+  return `
+    <svg width="100%" height="${height}" viewBox="0 0 ${width} ${height}" style="overflow: visible; margin-top: 8px; margin-bottom: 8px;">
+      <defs>
+        <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="var(--primary)" stop-opacity="0.25"/>
+          <stop offset="100%" stop-color="var(--primary)" stop-opacity="0.0"/>
+        </linearGradient>
+        <filter id="neonGlow" x="-20%" y="-20%" width="140%" height="140%">
+          <feGaussianBlur stdDeviation="3" result="blur" />
+          <feMerge>
+            <feMergeNode in="blur" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
+      </defs>
+      <path d="${areaD}" fill="url(#areaGrad)" />
+      <path d="${pathD}" fill="none" stroke="var(--primary)" stroke-width="2" filter="url(#neonGlow)" />
+      ${points.map(p => `
+        <circle cx="${p.x}" cy="${p.y}" r="3" fill="var(--success)" stroke="var(--bg-dark)" stroke-width="1">
+          <title>R$ ${p.price.toLocaleString('pt-BR')} (${new Date(p.date).toLocaleDateString('pt-BR')})</title>
+        </circle>
+      `).join('')}
+    </svg>
+  `;
 }
 
 document.addEventListener("DOMContentLoaded", init);

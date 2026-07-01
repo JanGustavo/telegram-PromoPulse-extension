@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.5.0] - 2026-07-01
+
+### 💾 Persistência com SQLite & Recuperação de Falhas (Fase 2)
+- **Persistência Completa de Estado:** Implementação de banco de dados SQLite local (`promopulse.db`) para guardar o histórico de alertas, configurações do radar e status ativo de monitoramento.
+- **Recuperação de Inicialização:** Se o servidor reiniciar por qualquer motivo, ele agora restaura automaticamente o monitoramento se estivesse ativo anteriormente.
+- **Mídia no Dashboard:** Download automático de mídias de ofertas e de imagens de visualização de links da web do Telegram diretamente na pasta persistida, exibindo fotos dos produtos no painel.
+- **Botão Direto de Oferta:** Adicionado botão de ação rápida "Ir para a Oferta" no rodapé de cada alerta.
+- **Resiliência do Telethon:** Nova rotina assíncrona com loop de reconexão e tentativas infinitas em caso de instabilidades.
+- **Testes Unitários:** Adicionado conjunto de testes automatizados (`test_server.py`) cobrindo as funções e regras de negócio de extração e filtros.
+
+### 🔗 Enriquecimento e Parsing de Links (Fase 3)
+- **Extração de Links:** Enriquecimento em background de alertas através do download de metadados, títulos originais limpos de clickbaits, preços reais e fotos de links de e-commerce (Amazon, Magalu, Shopee e Mercado Livre).
+
+## [1.4.0] - 2026-06-29
+
+### 🔍 Filtros de Busca e Tema Claro/Escuro (Fase 1)
+- **Filtros e Sniper Mode na Extensão:** Adicionado suporte para filtros rápidos de busca por palavras-chave e faixa de preço mínimo/máximo na aba de alertas.
+- **Dark Mode:** Botão para alternância dinâmica entre tema claro e escuro no dashboard.
+- **Swagger/OpenAPI:** Documentação enriquecida de schemas OpenAPI com tipagem robusta no FastAPI.
+
 ## [1.3.0] - 2026-04-24
 
 ### ✨ Resiliência e Persistência de Estado (F5)

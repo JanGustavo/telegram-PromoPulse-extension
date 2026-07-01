@@ -4,3 +4,5 @@ telethon
 pydantic
 python-dotenv
 pymongo
+beautifulsoup4
+httpx

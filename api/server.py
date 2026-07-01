@@ -1,10 +1,13 @@
 import asyncio
+import json
 import os
 import re
 import unicodedata
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+import httpx
+from bs4 import BeautifulSoup
 from fastapi import FastAPI, HTTPException, Query
 from telethon import TelegramClient, events
 from telethon.errors import SessionPasswordNeededError
@@ -14,6 +17,7 @@ from telethon.errors.rpcerrorlist import (
     SendCodeUnavailableError,
 )
 
+from api import db
 from api.models import (
     AlertsResponse,
     FilterPreviewResponse,
@@ -22,6 +26,7 @@ from api.models import (
     OfferRequest,
     OfferTestResponse,
     PhoneRequest,
+    PriceHistoryResponse,
     StartWatchRequest,
     StartWatchResponse,
     StopWatchResponse,
@@ -150,7 +155,6 @@ WATCH_CONFIG = {
 # ---- Estado Global ----
 monitoring_active = False
 monitoring_task = None
-alert_history = []
 phone_number = None
 phone_code_hash = None
 active_group_ids = set()
@@ -401,12 +405,15 @@ def _extract_price(text: str) -> float | None:
             elif "," in m:
                 clean = m.replace(",", ".")
             else:
-                clean = m
+                if "." in m and len(m.split(".")[-1]) == 3:
+                    clean = m.replace(".", "")
+                else:
+                    clean = m
             prices.append(float(clean))
         except ValueError:
             continue
     if not prices:
-        matches = re.findall(r"\b(\d{1,3}(?:\.\d{3})*(?,\d{2})?)\b", text)
+        matches = re.findall(r"\b(\d{1,3}(?:\.\d{3})*(?:,\d{2})?)\b", text)
         for m in matches:
             try:
                 prices.append(float(m.replace(".", "").replace(",", ".")))
@@ -515,17 +522,145 @@ SESSION_PATH = SESSIONS_DIR / "users"
 
 
 def create_client() -> TelegramClient:
-    return TelegramClient(str(SESSION_PATH), api_id, api_hash)
+    return TelegramClient(
+        str(SESSION_PATH),
+        api_id,
+        api_hash,
+        connection_retries=None,
+        auto_reconnect=True,
+    )
 
 
 client = create_client()
 client_lock = asyncio.Lock()
 
 
+async def enrich_alert_in_background(alert_id: int, original_url: str):
+    lower_url = original_url.lower()
+    # Filtra apenas links de e-commerce conhecidos
+    is_ecommerce = any(
+        domain in lower_url
+        for domain in [
+            "amazon.",
+            "amzn.to",
+            "magazineluiza.",
+            "magalu.at",
+            "mgl.li",
+            "mercadolivre.",
+            "mlb.link",
+            "shopee.",
+            "shope.ee",
+        ]
+    )
+    if not is_ecommerce:
+        return
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
+
+    try:
+        async with httpx.AsyncClient(follow_redirects=True, headers=headers, timeout=15.0) as client:
+            res = await client.get(original_url)
+            if res.status_code != 200:
+                return
+
+            final_url = str(res.url)
+            soup = BeautifulSoup(res.text, "html.parser")
+
+            # 1. Extração do título real do produto
+            title = None
+            og_title = soup.find("meta", property="og:title") or soup.find("meta", name="twitter:title")
+            if og_title:
+                title = og_title.get("content")
+            if not title:
+                title_tag = soup.find("title")
+                if title_tag:
+                    title = title_tag.text.strip()
+
+            # Limpa marcas extras comuns do título
+            if title:
+                title = title.split(" | ")[0].split(" - ")[0].strip()
+
+            # 2. Extração do preço
+            price = None
+            og_price = (
+                soup.find("meta", property="product:price:amount")
+                or soup.find("meta", property="product:sale_price:amount")
+                or soup.find("meta", itemprop="price")
+            )
+            if og_price:
+                try:
+                    price = float(og_price.get("content").replace(",", "."))
+                except ValueError:
+                    pass
+
+            if not price:
+                import json
+
+                for script in soup.find_all("script", type="application/ld+json"):
+                    try:
+                        ld = json.loads(script.string)
+                        if isinstance(ld, list):
+                            ld = ld[0]
+                        offers = ld.get("offers")
+                        if offers:
+                            if isinstance(offers, list):
+                                offers = offers[0]
+                            p = offers.get("price") or offers.get("lowPrice")
+                            if p:
+                                price = float(str(p).replace(",", "."))
+                                break
+                    except Exception:
+                        continue
+
+            # Fallback para Amazon
+            if "amazon.com" in final_url.lower() and not price:
+                price_whole = soup.find("span", class_="a-price-whole")
+                price_fraction = soup.find("span", class_="a-price-fraction")
+                if price_whole:
+                    try:
+                        p_str = price_whole.text.strip().replace(".", "").replace(",", "")
+                        if price_fraction:
+                            p_str += "." + price_fraction.text.strip()
+                        price = float(p_str)
+                    except ValueError:
+                        pass
+
+            # 3. Extração e download da imagem real do produto
+            image_url = None
+            og_image = soup.find("meta", property="og:image") or soup.find("meta", name="twitter:image")
+            if og_image:
+                img_src = og_image.get("content")
+                if img_src:
+                    media_dir = SESSIONS_DIR / "media"
+                    media_dir.mkdir(parents=True, exist_ok=True)
+                    try:
+                        img_res = await client.get(img_src, timeout=10.0)
+                        if img_res.status_code == 200:
+                            img_name = f"{alert_id}_scraped.jpg"
+                            (media_dir / img_name).write_bytes(img_res.content)
+                            image_url = img_name
+                    except Exception as e:
+                        print(f"Erro ao baixar imagem de {img_src}: {e}")
+
+            # Atualiza os detalhes no banco de dados SQLite
+            clean_title = _clean_product_name(title) if title else None
+            db.update_alert_details(
+                alert_id=alert_id, clean_title=clean_title, extracted_price=price, image_url=image_url
+            )
+            print(
+                f"Alerta {alert_id} enriquecido com sucesso do link: {final_url} (Preço: {price}, Título: {clean_title})"
+            )
+
+    except Exception as e:
+        print(f"Erro ao enriquecer alerta {alert_id} a partir do link: {e}")
+
+
 # QA: HANDLER ÚNICO E GLOBAL - Registrado uma única vez no startup
 @client.on(events.NewMessage())
 async def global_message_handler(event):
-    global alert_history, processed_msg_ids
+    global processed_msg_ids
     if not monitoring_active:
         return
     chat_id = event.chat_id
@@ -550,23 +685,49 @@ async def global_message_handler(event):
             msg_link = f"https://t.me/c/{str(chat_id)[4:]}/{msg_id}"
         else:
             msg_link = None
-        alert_history.append(
-            {
-                "group_id": chat_id,
-                "group_title": getattr(chat, "title", "Saved Messages"),
-                "username": username if not is_self else None,
-                "message": text[:500],
-                "message_id": msg_id,
-                "offer_score": meta.get("offer_score"),
-                "offer_categories": meta.get("offer_categories"),
-                "extracted_price": meta.get("extracted_price"),
-                "link": msg_link,
-                "clean_title": _clean_product_name(text),
-            }
-        )
+
+        # Tenta baixar a foto do produto/mensagem ou da visualização da web (se disponível)
+        image_url = None
+        media_dir = SESSIONS_DIR / "media"
+        media_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            download_path = None
+            if event.message.photo:
+                download_path = await event.message.download_media(file=media_dir / f"{msg_id}.jpg")
+            elif hasattr(event.message, "media") and event.message.media:
+                from telethon.tl.types import MessageMediaWebPage, WebPage
+
+                if isinstance(event.message.media, MessageMediaWebPage) and isinstance(
+                    event.message.media.webpage, WebPage
+                ):
+                    wp = event.message.media.webpage
+                    if wp.photo:
+                        download_path = await client.download_media(wp.photo, file=media_dir / f"{msg_id}.jpg")
+            if download_path:
+                image_url = f"{msg_id}.jpg"
+        except Exception as media_err:
+            print(f"Erro ao salvar mídia do alerta: {media_err}")
+
+        alert_item = {
+            "group_id": chat_id,
+            "group_title": getattr(chat, "title", "Saved Messages"),
+            "username": username if not is_self else None,
+            "message": text[:500],
+            "message_id": msg_id,
+            "offer_score": meta.get("offer_score"),
+            "offer_categories": meta.get("offer_categories"),
+            "extracted_price": meta.get("extracted_price"),
+            "link": msg_link,
+            "clean_title": _clean_product_name(text),
+            "image_url": image_url,
+        }
+        alert_id = db.save_alert(alert_item)
         print(f"ALERTA: {chat_id} - {getattr(chat, 'title', 'Saved Messages')} - {text[:100]}...")
-        if len(alert_history) > 200:
-            alert_history[:] = alert_history[-200:]
+
+        # Encontra links para enriquecimento do alerta em background
+        urls = re.findall(r"(https?://\S+)", text)
+        if urls:
+            asyncio.create_task(enrich_alert_in_background(alert_id, urls[0]))
 
 
 async def ensure_client_connected() -> None:
@@ -580,15 +741,26 @@ async def ensure_client_connected() -> None:
             if "cannot be reused after logging out" not in str(error):
                 raise
             client = create_client()
+            client.add_event_handler(global_message_handler, events.NewMessage())
             await client.connect()
         if not client.is_connected():
             raise HTTPException(status_code=503, detail="Nao conectado ao Telegram.")
 
 
 async def _run_monitoring(group_ids: list[int]) -> None:
-    global active_group_ids
+    global active_group_ids, monitoring_active
     active_group_ids = set(group_ids)
-    await client.run_until_disconnected()
+    print(f"Telethon: Iniciando monitoramento para {len(group_ids)} grupos...")
+    while monitoring_active:
+        try:
+            await ensure_client_connected()
+            await client.run_until_disconnected()
+        except asyncio.CancelledError:
+            print("Telethon: Monitoramento cancelado pelo usuario.")
+            break
+        except Exception as error:
+            print(f"Telethon: Desconexao ou erro no loop de escuta: {error}. Reconectando em 5 segundos...")
+            await asyncio.sleep(5)
 
 
 # ===========================================================================
@@ -598,7 +770,24 @@ async def _run_monitoring(group_ids: list[int]) -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await ensure_client_connected()
+    global WATCH_CONFIG, monitoring_active, active_group_ids, monitoring_task
+    # Inicializa banco de dados e carrega configuracoes
+    db.init_db()
+    WATCH_CONFIG = db.load_config(WATCH_CONFIG)
+
+    # Conecta o cliente do Telegram se possivel
+    try:
+        await ensure_client_connected()
+    except Exception as e:
+        print(f"Erro ao conectar cliente Telegram no startup: {e}")
+
+    # Restaura o estado anterior do monitoramento se estava ativo e logado
+    is_active, saved_groups = db.load_monitoring_state()
+    if is_active and await client.is_user_authorized():
+        print(f"Telethon: Restaurando monitoramento automatico para os grupos: {saved_groups}")
+        monitoring_active = True
+        monitoring_task = asyncio.create_task(_run_monitoring(saved_groups))
+
     yield
 
 
@@ -625,6 +814,8 @@ tags_metadata = [
     },
 ]
 
+from fastapi.staticfiles import StaticFiles
+
 app = FastAPI(
     title="PromoPulse API",
     description="API de monitoramento em tempo real de ofertas do Telegram com filtros inteligentes.",
@@ -633,6 +824,10 @@ app = FastAPI(
     lifespan=lifespan,
     root_path="/apis/promopulse",
 )
+
+# Garantir que a pasta de mídias de alertas exista e montá-la na API
+(SESSIONS_DIR / "media").mkdir(parents=True, exist_ok=True)
+app.mount("/media", StaticFiles(directory=str(SESSIONS_DIR / "media")), name="media")
 
 
 @app.get("/", tags=["Utilitários e Testes"], summary="Verificação rápida da API")
@@ -718,6 +913,7 @@ async def get_groups():
 async def set_watch_config(data: WatchConfigRequest):
     for k, v in data.dict().items():
         WATCH_CONFIG[k] = v
+    db.save_config(WATCH_CONFIG)
     return {"status": "ok", "config": WATCH_CONFIG}
 
 
@@ -725,7 +921,7 @@ async def set_watch_config(data: WatchConfigRequest):
     "/watch/status", response_model=WatchStatusResponse, tags=["Monitoramento (Radar)"], summary="Obter status do Radar"
 )
 async def watch_status():
-    return {"active": monitoring_active, "config": WATCH_CONFIG, "alerts_count": len(alert_history)}
+    return {"active": monitoring_active, "config": WATCH_CONFIG, "alerts_count": db.get_alerts_count()}
 
 
 @app.post(
@@ -740,6 +936,7 @@ async def start_watch(data: StartWatchRequest):
     if monitoring_active:
         return {"status": "already running", "groups": 0, "config": WATCH_CONFIG}
     monitoring_active = True
+    db.save_monitoring_state(True, data.group_ids)
     monitoring_task = asyncio.create_task(_run_monitoring(data.group_ids))
     return {"status": "monitoring started", "groups": len(data.group_ids), "config": WATCH_CONFIG}
 
@@ -753,6 +950,7 @@ async def start_watch(data: StartWatchRequest):
 async def stop_watch():
     global monitoring_active, monitoring_task
     monitoring_active = False
+    db.save_monitoring_state(False, list(active_group_ids))
     if monitoring_task:
         monitoring_task.cancel()
     return {"status": "monitoring stopped"}
@@ -766,34 +964,26 @@ async def get_alerts(
     category: str | None = Query(None, description="Categoria específica para filtro"),
     q: str | None = Query(None, description="Termo de pesquisa para busca textual no título ou mensagem"),
 ):
-    filtered = alert_history
-    if min_price is not None:
-        filtered = [a for a in filtered if a.get("extracted_price") is not None and a["extracted_price"] >= min_price]
-    if max_price is not None:
-        filtered = [a for a in filtered if a.get("extracted_price") is not None and a["extracted_price"] <= max_price]
-    if category:
-        cat_lower = category.lower()
-        filtered = [
-            a
-            for a in filtered
-            if a.get("offer_categories") and any(c.lower() == cat_lower for c in a["offer_categories"])
-        ]
-    if q:
-        q_lower = _remove_accents(q.lower())
-        filtered = [
-            a
-            for a in filtered
-            if q_lower in _remove_accents((a.get("message") or "").lower())
-            or q_lower in _remove_accents((a.get("clean_title") or "").lower())
-        ]
-    return {"alerts": filtered[-limit:]}
+    alerts = db.get_alerts(limit=limit, min_price=min_price, max_price=max_price, category=category, q=q)
+    return {"alerts": alerts}
 
 
 @app.delete("/alerts", tags=["Alertas"], summary="Limpar histórico de alertas")
 async def clear_alerts():
-    global alert_history
-    alert_history = []
+    db.clear_alerts()
+
     return {"status": "cleared"}
+
+
+@app.get(
+    "/alerts/{message_id}/price-history",
+    response_model=PriceHistoryResponse,
+    tags=["Alertas"],
+    summary="Obter histórico de preços de um alerta por message_id",
+)
+async def get_price_history(message_id: int):
+    history = db.get_price_history_by_msg_id(message_id)
+    return {"history": history}
 
 
 @app.post(
