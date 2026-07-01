@@ -146,6 +146,18 @@ async function loadState() {
 
   if (saved.lastAlertId) lastAlertId = saved.lastAlertId;
 
+  const specInput = document.getElementById("specificModelsInput");
+  if (specInput) specInput.value = (state.specific_models || []).join("\n");
+
+  const midInput = document.getElementById("midBrandsInput");
+  if (midInput) midInput.value = (state.mid_brands || []).join(", ");
+
+  const broadInput = document.getElementById("broadKeywordsInput");
+  if (broadInput) broadInput.value = (state.broad_keywords || []).join(", ");
+
+  const maxPriceInput = document.getElementById("priceMaxInput");
+  if (maxPriceInput) maxPriceInput.value = state.price_max !== null ? state.price_max : "";
+
   updateSoundUI();
   applyThemeUI();
 }

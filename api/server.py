@@ -466,19 +466,58 @@ def _clean_product_name(text: str) -> str:
     return lines[0] if lines else "Produto não identificado"
 
 
-def _matches_level(text: str, level: str) -> bool:
+def _matches_specific_model(text: str, model_name: str) -> bool:
     t_clean = _remove_accents(text.lower())
+    model_clean = _remove_accents(model_name.lower())
+    words = model_clean.split()
+    if not words:
+        return False
+    return all(w in t_clean for w in words)
+
+
+def _matches_level_broad(text: str) -> bool:
+    active_cats = WATCH_CONFIG.get("broad_categories", [])
+    if not active_cats:
+        return False
+    for cat in active_cats:
+        if _validate_category(text, cat):
+            return True
+    extra_kws = WATCH_CONFIG.get("broad_keywords", [])
+    for kw in extra_kws:
+        kw_clean = _remove_accents(kw.lower())
+        t_clean = _remove_accents(text.lower())
+        if re.search(rf"\b{re.escape(kw_clean)}\b", t_clean):
+            return True
+    return False
+
+
+def _matches_level_mid(text: str) -> bool:
+    active_cats = WATCH_CONFIG.get("mid_categories", [])
+    active_brands = WATCH_CONFIG.get("mid_brands", [])
+    if not active_cats or not active_brands:
+        return False
+
+    cat_matched = any(_validate_category(text, cat) for cat in active_cats)
+    if not cat_matched:
+        return False
+
+    t_clean = _remove_accents(text.lower())
+    brand_matched = any(_remove_accents(b.lower()) in t_clean for b in active_brands)
+    return brand_matched
+
+
+def _matches_level(text: str, level: str) -> bool:
     if level == "broad":
-        active_cats = WATCH_CONFIG.get("broad_categories", [])
-        if not active_cats:
-            return False
-        for cat in active_cats:
-            if _validate_category(text, cat):
-                return True
-        extra_kws = WATCH_CONFIG.get("broad_keywords", [])
-        for kw in extra_kws:
-            kw_clean = _remove_accents(kw.lower())
-            if re.search(rf"\b{re.escape(kw_clean)}\b", t_clean):
+        return _matches_level_broad(text)
+    elif level == "mid":
+        return _matches_level_mid(text)
+    elif level == "specific":
+        for entry in WATCH_CONFIG.get("specific_models", []):
+            if ":" in entry:
+                model_name = entry.split(":", 1)[0].strip()
+            else:
+                model_name = entry.strip()
+            if model_name and _matches_specific_model(text, model_name):
                 return True
         return False
     return False
@@ -487,9 +526,37 @@ def _matches_level(text: str, level: str) -> bool:
 def should_alert(text: str) -> tuple[bool, dict]:
     price_max = WATCH_CONFIG.get("price_max")
     active_levels = WATCH_CONFIG.get("active_levels", ["broad"])
-    level_match = any(_matches_level(text, lvl) for lvl in active_levels)
+
+    level_match = False
+    matched_specific_limit = None
+
+    for lvl in active_levels:
+        if lvl == "broad" and _matches_level_broad(text):
+            level_match = True
+        elif lvl == "mid" and _matches_level_mid(text):
+            level_match = True
+        elif lvl == "specific":
+            for entry in WATCH_CONFIG.get("specific_models", []):
+                if ":" in entry:
+                    parts = entry.split(":", 1)
+                    model_name = parts[0].strip()
+                    try:
+                        limit = float(parts[1].strip())
+                    except ValueError:
+                        limit = None
+                else:
+                    model_name = entry.strip()
+                    limit = None
+
+                if model_name and _matches_specific_model(text, model_name):
+                    level_match = True
+                    matched_specific_limit = limit
+                    if limit is not None:
+                        break
+
     if not level_match:
         return False, {}
+
     score, categories = _offer_score(text)
     min_score = WATCH_CONFIG.get("min_score", 2)
     relaxed = WATCH_CONFIG.get("relaxed_mode", False)
@@ -501,9 +568,16 @@ def should_alert(text: str) -> tuple[bool, dict]:
         else:
             if score < min_score:
                 return False, {}
+
     extracted_price = _extract_price(text)
-    if price_max and extracted_price and extracted_price > price_max:
+
+    effective_limit = price_max
+    if matched_specific_limit is not None:
+        effective_limit = matched_specific_limit
+
+    if effective_limit and extracted_price and extracted_price > effective_limit:
         return False, {}
+
     return True, {
         "offer_score": score,
         "offer_categories": categories,

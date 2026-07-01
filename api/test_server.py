@@ -45,16 +45,19 @@ class TestServerLogic(unittest.TestCase):
         # Backup configuration
         old_config = WATCH_CONFIG.copy()
 
-        # Configure WATCH_CONFIG for predictable test
-        WATCH_CONFIG["active_levels"] = ["broad"]
-        WATCH_CONFIG["broad_categories"] = ["celulares"]
-        WATCH_CONFIG["price_max"] = 2000.0
-        WATCH_CONFIG["min_score"] = 2
-        WATCH_CONFIG["require_offer_match"] = True
-        WATCH_CONFIG["relaxed_mode"] = False
-
         try:
-            # Should match
+            # Test Broad Level
+            WATCH_CONFIG.clear()
+            WATCH_CONFIG.update(
+                {
+                    "active_levels": ["broad"],
+                    "broad_categories": ["celulares"],
+                    "price_max": 2000.0,
+                    "min_score": 2,
+                    "require_offer_match": True,
+                    "relaxed_mode": False,
+                }
+            )
             ok, meta = should_alert("Smartphone Samsung Galaxy por R$ 1.200 no link https://amazon.com")
             self.assertTrue(ok)
             self.assertEqual(meta["extracted_price"], 1200.0)
@@ -63,9 +66,49 @@ class TestServerLogic(unittest.TestCase):
             ok, meta = should_alert("Smartphone Samsung Galaxy por R$ 2.500 no link https://amazon.com")
             self.assertFalse(ok)
 
-            # Not matching category
-            ok, meta = should_alert("Fralda Pampers por R$ 50 no link https://amazon.com")
+            # Test Mid Level (brand categories + mid brands)
+            WATCH_CONFIG.clear()
+            WATCH_CONFIG.update(
+                {
+                    "active_levels": ["mid"],
+                    "mid_categories": ["celulares"],
+                    "mid_brands": ["Apple"],
+                    "min_score": 2,
+                    "require_offer_match": True,
+                    "relaxed_mode": False,
+                }
+            )
+            # Apple is in mid_brands and Celular is celulares category
+            ok, meta = should_alert("Celular Apple por R$ 4.000 link https://amazon.com")
+            self.assertTrue(ok)
+            # Samsung is not in mid_brands
+            ok, meta = should_alert("Celular Samsung por R$ 2.000 link https://amazon.com")
             self.assertFalse(ok)
+
+            # Test Specific Level with custom price limit override
+            WATCH_CONFIG.clear()
+            WATCH_CONFIG.update(
+                {
+                    "active_levels": ["specific"],
+                    "specific_models": ["iPhone 15 Pro Max : 5500", "Galaxy S24 : 3200"],
+                    "price_max": 2000.0,
+                    "min_score": 2,
+                    "require_offer_match": True,
+                    "relaxed_mode": False,
+                }
+            )
+            # iPhone 15 Pro Max is R$ 4.800 (under specific limit 5500, even though over global limit 2000!)
+            ok, meta = should_alert("Celular iPhone 15 Pro Max por R$ 4.800 no link https://amazon.com")
+            self.assertTrue(ok)
+
+            # Galaxy S24 is R$ 3.500 (over specific limit 3200)
+            ok, meta = should_alert("Celular Galaxy S24 por R$ 3.500 no link https://amazon.com")
+            self.assertFalse(ok)
+
+            # Words out of order matching
+            ok, meta = should_alert("Celular Max Pro 15 iPhone por R$ 5.000 no link https://amazon.com")
+            self.assertTrue(ok)
+
         finally:
             # Restore configuration
             WATCH_CONFIG.clear()

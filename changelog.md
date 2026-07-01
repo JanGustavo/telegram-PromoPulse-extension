@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.1] - 2026-07-01
+
+### 🎯 Personalização Avançada de Alertas (Fase 3)
+- **Filtros por Marcas e Modelos:** Implementada a lógica completa de correspondência para os níveis de correspondência `"mid"` (marca + categoria) e `"specific"` (modelos específicos).
+- **Limites de Preço por Modelo:** O radar agora permite definir limites de preço específicos para cada modelo digitado (ex: `iPhone 15 Pro Max : 5500`), sobrescrevendo o limite de preço global quando o produto específico for detectado.
+- **Correção de UI:** Agora os campos de texto do painel da extensão são recarregados corretamente a partir das configurações salvas.
+
 ## [1.5.0] - 2026-07-01
 
 ### 💾 Persistência com SQLite & Recuperação de Falhas (Fase 2)
