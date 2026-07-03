@@ -10,6 +10,7 @@ import httpx
 from bs4 import BeautifulSoup
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from telethon import TelegramClient, events
 from telethon.errors import SessionPasswordNeededError
 from telethon.errors.rpcerrorlist import (
@@ -894,8 +895,6 @@ tags_metadata = [
     },
 ]
 
-from fastapi.staticfiles import StaticFiles
-
 app = FastAPI(
     title="PromoPulse API",
     description="API de monitoramento em tempo real de ofertas do Telegram com filtros inteligentes.",
@@ -913,9 +912,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Garantir que a pasta de mídias de alertas exista e montá-la na API
+# Garantir que a pasta de mídias de alertas exista
 (SESSIONS_DIR / "media").mkdir(parents=True, exist_ok=True)
-app.mount("/media", StaticFiles(directory=str(SESSIONS_DIR / "media")), name="media")
+
+@app.get("/media/{filename}", tags=["Utilitários e Testes"], summary="Obter imagem do produto")
+async def get_media_file(filename: str):
+    file_path = SESSIONS_DIR / "media" / filename
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Imagem nao encontrada.")
+    return FileResponse(file_path)
 
 
 @app.get("/", tags=["Utilitários e Testes"], summary="Verificação rápida da API")
