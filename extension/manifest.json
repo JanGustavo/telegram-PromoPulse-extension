@@ -20,5 +20,8 @@
 	   "128": "telegram_logo_128.png"
    },
    "permissions": ["storage", "tabs", "notifications"],
-   "host_permissions": ["https://jangustavo.me/apis/promopulse/*"]
+   "host_permissions": [
+       "https://jangustavo.me/apis/promopulse/*",
+       "http://localhost:8000/*"
+   ]
 }

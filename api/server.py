@@ -9,6 +9,7 @@ from pathlib import Path
 import httpx
 from bs4 import BeautifulSoup
 from fastapi import FastAPI, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
 from telethon import TelegramClient, events
 from telethon.errors import SessionPasswordNeededError
 from telethon.errors.rpcerrorlist import (
@@ -150,6 +151,7 @@ WATCH_CONFIG = {
     "min_score": 2,
     "require_offer_match": True,
     "relaxed_mode": False,
+    "custom_blocked_names": [],
 }
 
 # ---- Estado Global ----
@@ -357,6 +359,10 @@ def group_passes_quality_filter(title: str) -> bool:
             return False
     if _is_spam_name(title):
         return False
+    custom_blocked = WATCH_CONFIG.get("custom_blocked_names", [])
+    for name in custom_blocked:
+        if name and name.lower() in title.lower():
+            return False
     return True
 
 
@@ -899,6 +905,14 @@ app = FastAPI(
     root_path="/apis/promopulse",
 )
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 # Garantir que a pasta de mídias de alertas exista e montá-la na API
 (SESSIONS_DIR / "media").mkdir(parents=True, exist_ok=True)
 app.mount("/media", StaticFiles(directory=str(SESSIONS_DIR / "media")), name="media")
@@ -976,6 +990,48 @@ async def get_groups():
             }
         )
     return {"groups": groups}
+
+
+@app.get(
+    "/groups/filter-preview",
+    response_model=FilterPreviewResponse,
+    tags=["Grupos"],
+    summary="Verificar filtro de grupos e motivos de bloqueio",
+)
+async def filter_preview():
+    await ensure_client_connected()
+    if not await client.is_user_authorized():
+        return {"groups": []}
+    dialogs = await client.get_dialogs()
+    result = []
+    for d in dialogs:
+        if not (d.is_group or d.is_channel):
+            continue
+        title = d.title or ""
+        blocked_by = []
+        for pattern in GROUP_QUALITY_BLOCKLIST:
+            if pattern.search(title):
+                blocked_by.append(f"regex:{pattern.pattern}")
+        
+        custom_blocked = WATCH_CONFIG.get("custom_blocked_names", [])
+        for name in custom_blocked:
+            if name and name.lower() in title.lower():
+                blocked_by.append(f"custom:{name}")
+                
+        if not blocked_by and _is_spam_name(title):
+            blocked_by.append("spam_name_heuristic")
+            
+        result.append(
+            {
+                "id": d.id,
+                "title": title,
+                "username": getattr(d.entity, "username", None),
+                "link": f"https://t.me/{d.entity.username}" if getattr(d.entity, "username", None) else None,
+                "auto_filtered": len(blocked_by) > 0,
+                "blocked_by": blocked_by,
+            }
+        )
+    return {"groups": result}
 
 
 @app.post(

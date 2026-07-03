@@ -35,6 +35,7 @@ const state = {
   smart_alert_enabled: true, // Sniper Mode
   theme: "dark",
   filter_category: "all",
+  custom_blocked_names: [],
 };
 
 function applyThemeUI() {
@@ -117,6 +118,7 @@ async function saveState() {
     sound_volume: state.sound_volume,
     smart_alert_enabled: state.smart_alert_enabled,
     theme: state.theme,
+    custom_blocked_names: state.custom_blocked_names || [],
   });
 }
 
@@ -144,6 +146,7 @@ async function loadState() {
   state.sound_volume = saved.sound_volume ?? 0.8;
   state.smart_alert_enabled = saved.smart_alert_enabled ?? true;
   state.theme = saved.theme || "dark";
+  state.custom_blocked_names = saved.custom_blocked_names || [];
 
   if (saved.lastAlertId) lastAlertId = saved.lastAlertId;
 
@@ -158,6 +161,9 @@ async function loadState() {
 
   const maxPriceInput = document.getElementById("priceMaxInput");
   if (maxPriceInput) maxPriceInput.value = state.price_max !== null ? state.price_max : "";
+
+  const blacklistInput = document.getElementById("groupsBlacklistInput");
+  if (blacklistInput) blacklistInput.value = (state.custom_blocked_names || []).join(", ");
 
   updateSoundUI();
   applyThemeUI();
@@ -296,7 +302,7 @@ function renderGroups() {
                 : `<span class="group-name">
                      ${escapeHtml(group.title)}
                    </span>`
-            }            ${filtered ? '<span class="filter-badge">auto-filtrado</span>' : ""}
+            }            ${filtered ? `<span class="filter-badge" title="Motivos: ${(group.blocked_by || []).join(', ')}">auto-filtrado</span>` : ""}
           </div>
         </div>
         <label class="switch ${filtered ? "switch-disabled" : ""}">
@@ -378,6 +384,7 @@ async function pushConfigToApi() {
       min_score: state.min_score || 2,
       require_offer_match: state.require_offer_match ?? true,
       relaxed_mode: state.relaxed_mode ?? false,
+      custom_blocked_names: state.custom_blocked_names || [],
     };
 
     await fetch(`${API_BASE_URL}/watch/config`, {
@@ -535,8 +542,12 @@ async function loadAlerts() {
         
         // --- Sniper Mode Visual ---
         let isCritical = false;
-        if (state.smart_alert_enabled && state.price_max && a.extracted_price) {
-            if (a.extracted_price <= (state.price_max * 0.6)) isCritical = true;
+        if (state.smart_alert_enabled) {
+          if (a.price_drop_percentage && a.price_drop_percentage >= 40) {
+            isCritical = true;
+          } else if (state.price_max && a.extracted_price && a.extracted_price <= (state.price_max * 0.6)) {
+            isCritical = true;
+          }
         }
 
         // --- Imagem do Produto ---
@@ -637,7 +648,7 @@ async function loadGroups() {
   if (!node) return;
   node.innerHTML = '<div class="loading-spinner"><div class="spinner"></div> Carregando grupos...</div>';
   try {
-    const res = await fetch(`${API_BASE_URL}/groups`);
+    const res = await fetch(`${API_BASE_URL}/groups/filter-preview`);
     if (!res.ok) throw new Error();
     const data = await res.json();
     allGroups = Array.isArray(data.groups) ? data.groups : [];
@@ -814,6 +825,17 @@ function bindEvents() {
       loadAlerts(); // Re-renderiza para aplicar/remover estilos
   });
 
+  // --- BLACKLIST DE GRUPOS ---
+  document.getElementById("groupsBlacklistInput")?.addEventListener("change", async (e) => {
+    state.custom_blocked_names = e.target.value
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    await saveState();
+    await pushConfigToApi();
+    loadGroups();
+  });
+
   document.querySelectorAll(".cat-card").forEach((card) => {
     card.addEventListener("click", async () => {
       const catName = card.dataset.category;
@@ -898,10 +920,14 @@ function notify(alert) {
 
   // LÓGICA DE SOM INTELIGENTE
   let soundToPlay = null;
-  if (state.smart_alert_enabled && state.price_max && alert.extracted_price) {
-    const threshold = state.price_max * 0.6;
-    if (alert.extracted_price <= threshold) {
+  if (state.smart_alert_enabled) {
+    if (alert.price_drop_percentage && alert.price_drop_percentage >= 40) {
       soundToPlay = "urgent.mp3";
+    } else if (state.price_max && alert.extracted_price) {
+      const threshold = state.price_max * 0.6;
+      if (alert.extracted_price <= threshold) {
+        soundToPlay = "urgent.mp3";
+      }
     }
   }
 

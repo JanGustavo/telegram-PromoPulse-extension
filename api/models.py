@@ -45,6 +45,8 @@ class GroupsResponse(BaseModel):
 class FilterPreviewItem(BaseModel):
     id: int
     title: str
+    username: Optional[str] = None
+    link: Optional[str] = None
     auto_filtered: bool
     blocked_by: list[str]
 
@@ -113,6 +115,11 @@ class WatchConfigRequest(BaseModel):
         default=False,
         examples=[False],
         description="Se True, aceita qualquer mensagem com score >= 1",
+    )
+    custom_blocked_names: list[str] = Field(
+        default=[],
+        examples=[["Grupo de Spams", "Crypto Trade"]],
+        description="Nomes de grupos a serem bloqueados de forma dinâmica",
     )
 
 
