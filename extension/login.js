@@ -1,4 +1,4 @@
-const API_BASE_URL = "https://jangustavo.me/apis/promopulse";
+const API_BASE_URL = window.PROMOPULSE_API_BASE_URL;
 let sendCodeInFlight = false;
 
 function getCodeStep() {
@@ -115,7 +115,10 @@ async function sendCode() {
     setStatus("Código enviado no Telegram.", "success");
     showCodeStep();
   } catch (error) {
-    setStatus("Erro de conexão com o servidor.", "error");
+    setStatus(
+      `Não foi possível conectar à API em ${API_BASE_URL}. Confira se o servidor está iniciado.`,
+      "error",
+    );
     console.error(error);
   } finally {
     sendCodeInFlight = false;
@@ -161,7 +164,10 @@ async function login() {
 
     setTimeout(openDashboard, 800);
   } catch (error) {
-    setStatus("Erro ao processar login.", "error");
+    setStatus(
+      `Não foi possível conectar à API em ${API_BASE_URL}. Confira se o servidor está iniciado.`,
+      "error",
+    );
     console.error(error);
   } finally {
     loginBtn.disabled = false;

@@ -155,6 +155,9 @@ class WatchStatusResponse(BaseModel):
     active: bool
     config: dict
     alerts_count: int
+    telegram_connected: bool = False
+    telegram_authorized: bool = False
+    connection_error: str | None = None
 
 
 # ===========================================================================
@@ -163,6 +166,7 @@ class WatchStatusResponse(BaseModel):
 
 
 class AlertItem(BaseModel):
+    id: int
     group_id: int
     group_title: str
     username: Optional[str] = None
@@ -175,10 +179,21 @@ class AlertItem(BaseModel):
     clean_title: Optional[str] = None
     image_url: Optional[str] = None
     price_drop_percentage: Optional[int] = 0
+    favorite: bool = False
+    created_at: Optional[str] = None
 
 
 class AlertsResponse(BaseModel):
     alerts: list[AlertItem]
+
+
+class AlertFavoriteRequest(BaseModel):
+    favorite: bool
+
+
+class AlertFavoriteResponse(BaseModel):
+    id: int
+    favorite: bool
 
 
 # ===========================================================================
@@ -210,3 +225,28 @@ class PriceHistoryItem(BaseModel):
 
 class PriceHistoryResponse(BaseModel):
     history: list[PriceHistoryItem]
+
+
+# ===========================================================================
+# APOIO (APOIA.se)
+# ===========================================================================
+
+
+class SupporterVerifyRequest(BaseModel):
+    email: str = Field(
+        ...,
+        examples=["apoiador@email.com"],
+        description="E-mail cadastrado pelo usuário no APOIA.se",
+    )
+
+
+class SupporterVerifyResponse(BaseModel):
+    active: bool = Field(description="True se há apoio ativo na campanha")
+    tier: Optional[str] = Field(
+        default=None,
+        description="Nível de apoio (ex: 'Apoiador Sênior', 'Patrono PromoPulse')",
+    )
+    amount: Optional[float] = Field(
+        default=None,
+        description="Valor mensal da contribuição em BRL",
+    )

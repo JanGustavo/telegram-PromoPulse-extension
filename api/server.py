@@ -4,6 +4,7 @@ import os
 import re
 import unicodedata
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 
 import httpx
@@ -12,7 +13,7 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from telethon import TelegramClient, events
-from telethon.errors import SessionPasswordNeededError
+from telethon.errors import AuthKeyUnregisteredError, SessionPasswordNeededError
 from telethon.errors.rpcerrorlist import (
     PhoneCodeInvalidError,
     PhoneNumberInvalidError,
@@ -21,6 +22,8 @@ from telethon.errors.rpcerrorlist import (
 
 from api import db
 from api.models import (
+    AlertFavoriteRequest,
+    AlertFavoriteResponse,
     AlertsResponse,
     FilterPreviewResponse,
     GroupsResponse,
@@ -32,6 +35,8 @@ from api.models import (
     StartWatchRequest,
     StartWatchResponse,
     StopWatchResponse,
+    SupporterVerifyRequest,
+    SupporterVerifyResponse,
     WatchConfigRequest,
     WatchConfigResponse,
     WatchStatusResponse,
@@ -72,6 +77,16 @@ try:
     api_id = int(api_id)
 except (TypeError, ValueError) as error:
     raise RuntimeError("API_ID deve ser um numero inteiro valido.") from error
+
+# ---- Configuração APOIA.se (opcional) ----
+APOIA_SE_API_KEY: str = os.getenv("APOIA_SE_API_KEY", "")
+APOIA_SE_CAMPAIGN: str = os.getenv("APOIA_SE_CAMPAIGN", "")
+
+# Tier mapping by monthly contribution amount (BRL)
+_APOIA_TIERS = [
+    (25.0, "Patrono PromoPulse"),
+    (10.0, "Apoiador Sênior"),
+]
 
 # ---- Filtro de Qualidade de Grupos ----
 GROUP_QUALITY_BLOCKLIST: list[re.Pattern] = [
@@ -614,6 +629,49 @@ def create_client() -> TelegramClient:
 
 client = create_client()
 client_lock = asyncio.Lock()
+client_recovery_lock = asyncio.Lock()
+
+
+async def recover_invalid_telegram_session(failed_client: TelegramClient | None = None) -> None:
+    """Move an unusable Telethon session aside and prepare a fresh login session."""
+    global client, monitoring_active, phone_code_hash
+
+    async with client_recovery_lock:
+        # Another request may already have replaced the failed client while we waited.
+        if failed_client is not None and client is not failed_client:
+            return
+
+        try:
+            await client.disconnect()
+        except Exception as error:
+            print(f"Telethon: erro ao fechar sessão inválida: {error}")
+
+        if SESSION_PATH.exists():
+            suffix = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+            backup_path = SESSION_PATH.with_name(f"{SESSION_PATH.name}.invalid-{suffix}")
+            try:
+                SESSION_PATH.replace(backup_path)
+                print(f"Telethon: sessão inválida preservada em {backup_path.name}")
+            except OSError as error:
+                # Do not silently overwrite a potentially recoverable session.
+                raise HTTPException(
+                    status_code=503,
+                    detail="A sessão do Telegram expirou, mas não foi possível preservá-la. Verifique o servidor.",
+                ) from error
+
+        for suffix in ("-journal", "-wal", "-shm"):
+            sidecar = Path(f"{SESSION_PATH}{suffix}")
+            if sidecar.exists():
+                sidecar.unlink(missing_ok=True)
+
+        client = create_client()
+        client.add_event_handler(global_message_handler, events.NewMessage())
+        phone_code_hash = None
+        if monitoring_active:
+            monitoring_active = False
+            db.save_monitoring_state(False, list(active_group_ids))
+        await client.connect()
+        print("Telethon: sessão nova pronta; é necessário autenticar novamente.")
 
 
 async def enrich_alert_in_background(alert_id: int, original_url: str):
@@ -818,6 +876,9 @@ async def ensure_client_connected() -> None:
             return
         try:
             await client.connect()
+        except AuthKeyUnregisteredError:
+            failed_client = client
+            await recover_invalid_telegram_session(failed_client)
         except ValueError as error:
             if "cannot be reused after logging out" not in str(error):
                 raise
@@ -838,6 +899,16 @@ async def _run_monitoring(group_ids: list[int]) -> None:
             await client.run_until_disconnected()
         except asyncio.CancelledError:
             print("Telethon: Monitoramento cancelado pelo usuario.")
+            break
+        except AuthKeyUnregisteredError as error:
+            print(f"Telethon: chave de sessão revogada; será necessário novo login: {error}")
+            failed_client = client
+            try:
+                await recover_invalid_telegram_session(failed_client)
+            except Exception as recovery_error:
+                print(f"Telethon: não foi possível preparar nova sessão: {recovery_error}")
+            monitoring_active = False
+            db.save_monitoring_state(False, list(active_group_ids))
             break
         except Exception as error:
             print(f"Telethon: Desconexao ou erro no loop de escuta: {error}. Reconectando em 5 segundos...")
@@ -862,9 +933,19 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"Erro ao conectar cliente Telegram no startup: {e}")
 
-    # Restaura o estado anterior do monitoramento se estava ativo e logado
+    # Restaura o monitoramento somente se a sessão ainda estiver autorizada.
     is_active, saved_groups = db.load_monitoring_state()
-    if is_active and await client.is_user_authorized():
+    telegram_authorized = False
+    try:
+        telegram_authorized = await client.is_user_authorized()
+    except AuthKeyUnregisteredError:
+        failed_client = client
+        try:
+            await recover_invalid_telegram_session(failed_client)
+        except Exception as error:
+            print(f"Erro ao recuperar sessão Telegram no startup: {error}")
+        db.save_monitoring_state(False, saved_groups)
+    if is_active and telegram_authorized:
         print(f"Telethon: Restaurando monitoramento automatico para os grupos: {saved_groups}")
         monitoring_active = True
         monitoring_task = asyncio.create_task(_run_monitoring(saved_groups))
@@ -892,6 +973,10 @@ tags_metadata = [
     {
         "name": "Utilitários e Testes",
         "description": "Verificação de integridade da API e testes rápidos do motor de regras.",
+    },
+    {
+        "name": "Apoio",
+        "description": "Integração com a plataforma APOIA.se para verificação de apoiadores ativos e liberação de benefícios.",
     },
 ]
 
@@ -940,6 +1025,15 @@ async def send_code(data: PhoneRequest):
         result = await client.send_code_request(phone_number)
         phone_code_hash = result.phone_code_hash
         return {"status": "code sent"}
+    except AuthKeyUnregisteredError:
+        failed_client = client
+        await recover_invalid_telegram_session(failed_client)
+        try:
+            result = await client.send_code_request(phone_number)
+            phone_code_hash = result.phone_code_hash
+            return {"status": "code sent"}
+        except Exception as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -1056,7 +1150,34 @@ async def set_watch_config(data: WatchConfigRequest):
     "/watch/status", response_model=WatchStatusResponse, tags=["Monitoramento (Radar)"], summary="Obter status do Radar"
 )
 async def watch_status():
-    return {"active": monitoring_active, "config": WATCH_CONFIG, "alerts_count": db.get_alerts_count()}
+    global monitoring_active
+    telegram_connected = client.is_connected()
+    telegram_authorized = False
+    connection_error = None
+    if telegram_connected:
+        try:
+            telegram_authorized = await client.is_user_authorized()
+        except AuthKeyUnregisteredError:
+            failed_client = client
+            try:
+                await recover_invalid_telegram_session(failed_client)
+                telegram_connected = client.is_connected()
+                connection_error = "Sessão do Telegram expirada. Faça login novamente."
+            except Exception:
+                telegram_connected = False
+                connection_error = "Sessão inválida; não foi possível preparar novo login."
+            telegram_authorized = False
+            if monitoring_active:
+                monitoring_active = False
+                db.save_monitoring_state(False, list(active_group_ids))
+    return {
+        "active": monitoring_active,
+        "config": WATCH_CONFIG,
+        "alerts_count": db.get_alerts_count(),
+        "telegram_connected": telegram_connected,
+        "telegram_authorized": telegram_authorized,
+        "connection_error": connection_error,
+    }
 
 
 @app.post(
@@ -1098,9 +1219,30 @@ async def get_alerts(
     max_price: float | None = Query(None, description="Preço máximo para filtro"),
     category: str | None = Query(None, description="Categoria específica para filtro"),
     q: str | None = Query(None, description="Termo de pesquisa para busca textual no título ou mensagem"),
+    favorites_only: bool = Query(False, description="Retornar somente alertas favoritos"),
 ):
-    alerts = db.get_alerts(limit=limit, min_price=min_price, max_price=max_price, category=category, q=q)
+    alerts = db.get_alerts(
+        limit=limit,
+        min_price=min_price,
+        max_price=max_price,
+        category=category,
+        q=q,
+        favorites_only=favorites_only,
+    )
     return {"alerts": alerts}
+
+
+@app.patch(
+    "/alerts/{alert_id}/favorite",
+    response_model=AlertFavoriteResponse,
+    tags=["Alertas"],
+    summary="Marcar ou desmarcar alerta como favorito",
+)
+async def update_alert_favorite(alert_id: int, data: AlertFavoriteRequest):
+    favorite = db.set_alert_favorite(alert_id, data.favorite)
+    if favorite is None:
+        raise HTTPException(status_code=404, detail="Alerta não encontrado.")
+    return {"id": alert_id, "favorite": favorite}
 
 
 @app.delete("/alerts", tags=["Alertas"], summary="Limpar histórico de alertas")
@@ -1143,6 +1285,80 @@ async def test_offer(data: OfferRequest):
 @app.head("/health", tags=["Utilitários e Testes"], summary="Checagem de integridade")
 async def health_check():
     return {"status": "healthy"}
+
+
+# ===========================================================================
+# 6. INTEGRAÇÃO APOIA.se
+# ===========================================================================
+
+
+@app.post(
+    "/supporter/verify",
+    response_model=SupporterVerifyResponse,
+    tags=["Apoio"],
+    summary="Verificar status de apoiador no APOIA.se",
+    description=(
+        "Recebe um e-mail e consulta a API da APOIA.se para checar se o usuário "
+        "possui um apoio ativo na campanha do PromoPulse. Requer APOIA_SE_API_KEY "
+        "e APOIA_SE_CAMPAIGN configurados no .env."
+    ),
+)
+async def verify_supporter(data: SupporterVerifyRequest) -> SupporterVerifyResponse:
+    if not APOIA_SE_API_KEY or not APOIA_SE_CAMPAIGN:
+        # Integração não configurada — retorna inactive sem erro para não bloquear UX
+        return SupporterVerifyResponse(active=False, tier=None, amount=None)
+
+    email = data.email.strip().lower()
+    if not email or "@" not in email:
+        raise HTTPException(status_code=422, detail="E-mail inválido.")
+
+    url = f"https://api.apoia.se/v1/campaigns/{APOIA_SE_CAMPAIGN}/supporters"
+    headers = {"Authorization": f"Bearer {APOIA_SE_API_KEY}"}
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as http_client:
+            resp = await http_client.get(url, headers=headers, params={"email": email})
+    except httpx.RequestError as exc:
+        raise HTTPException(
+            status_code=503, detail=f"Não foi possível contactar a APOIA.se: {exc}"
+        ) from exc
+
+    if resp.status_code == 401:
+        raise HTTPException(status_code=502, detail="Chave APOIA_SE_API_KEY inválida ou expirada.")
+
+    if resp.status_code not in (200, 404):
+        raise HTTPException(
+            status_code=502,
+            detail=f"APOIA.se retornou status inesperado: {resp.status_code}",
+        )
+
+    payload = resp.json()
+    supporters: list[dict] = payload.get("supporters", [])
+
+    # Filtra pelo e-mail e status ativo
+    match = next(
+        (s for s in supporters if s.get("email", "").lower() == email and s.get("status") == "active"),
+        None,
+    )
+
+    if not match:
+        return SupporterVerifyResponse(active=False, tier=None, amount=None)
+
+    # Resolve tier pelo valor da contribuição
+    amount: float | None = None
+    try:
+        amount = float(match.get("amount") or match.get("value") or 0)
+    except (TypeError, ValueError):
+        amount = None
+
+    tier: str | None = None
+    if amount is not None:
+        for threshold, tier_name in _APOIA_TIERS:
+            if amount >= threshold:
+                tier = tier_name
+                break
+
+    return SupporterVerifyResponse(active=True, tier=tier, amount=amount)
 
 
 if __name__ == "__main__":

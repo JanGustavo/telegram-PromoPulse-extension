@@ -1,4 +1,4 @@
-const API_BASE_URL = "https://jangustavo.me/apis/promopulse";
+const API_BASE_URL = window.PROMOPULSE_API_BASE_URL;
 const STORAGE_KEY = "radarConfig";
 
 // ---------------------------------------------------------------------------
@@ -17,6 +17,7 @@ let allGroups = [];
 let monitoringActive = false;
 let lastAlertId = null;
 let audioContextPrimed = false; // Controle de permissão de áudio
+let showFavoriteAlertsOnly = false;
 
 const state = {
   selectedGroupIds: new Set(),
@@ -504,6 +505,7 @@ async function loadAlerts() {
     if (q) params.append("q", q);
     if (minPrice) params.append("min_price", minPrice);
     if (maxPrice) params.append("max_price", maxPrice);
+    if (showFavoriteAlertsOnly) params.append("favorites_only", "true");
     if (state.filter_category && state.filter_category !== "all") {
       params.append("category", state.filter_category);
     }
@@ -513,7 +515,9 @@ async function loadAlerts() {
     const rawAlerts = Array.isArray(data.alerts) ? data.alerts : [];
 
     if (rawAlerts.length === 0) {
-      node.innerHTML = '<div class="empty-state">Nenhum alerta ainda.</div>';
+      node.innerHTML = showFavoriteAlertsOnly
+        ? '<div class="empty-state">Você ainda não salvou alertas favoritos.</div>'
+        : '<div class="empty-state">Nenhum alerta ainda.</div>';
       return;
     }
 
@@ -527,9 +531,10 @@ async function loadAlerts() {
 
     const sorted = [...alerts].reverse();
     const latest = sorted[0];
-    if (latest && latest.message_id !== lastAlertId) {
+    const latestAlertKey = latest ? `${latest.group_id}_${latest.message_id}` : null;
+    if (!showFavoriteAlertsOnly && latest && latestAlertKey !== lastAlertId) {
       notify(latest);
-      lastAlertId = latest.message_id;
+      lastAlertId = latestAlertKey;
       saveState();
     }
 
@@ -538,6 +543,10 @@ async function loadAlerts() {
         const cats = (a.offer_categories || []).join(" · ");
         const price = a.extracted_price
           ? `R$ ${Number(a.extracted_price).toLocaleString("pt-BR")}`
+          : "";
+        const alertDate = a.created_at ? new Date(`${a.created_at.replace(" ", "T")}Z`) : null;
+        const timestampLabel = alertDate && !Number.isNaN(alertDate.getTime())
+          ? alertDate.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })
           : "";
         
         // --- Sniper Mode Visual ---
@@ -562,12 +571,13 @@ async function loadAlerts() {
           ? `<button class="btn-alert-chart" data-message-id="${a.message_id}">📈 Histórico</button>`
           : "";
 
-        const actionHtml = (a.link || a.extracted_price)
-          ? `<div class="alert-actions">
-               ${chartBtnHtml}
-               ${a.link ? `<a href="${a.link}" target="_blank" class="btn-alert-link">Ir para a Oferta ➔</a>` : ""}
-             </div>`
-          : "";
+        const favoriteBtnHtml = `<button class="btn-alert-favorite ${a.favorite ? "active" : ""}" data-alert-id="${a.id}" data-favorite="${a.favorite ? "true" : "false"}" aria-pressed="${a.favorite ? "true" : "false"}" title="${a.favorite ? "Remover dos favoritos" : "Salvar nos favoritos"}">${a.favorite ? "★ Salvo" : "☆ Favoritar"}</button>`;
+
+        const actionHtml = `<div class="alert-actions">
+          ${favoriteBtnHtml}
+          ${chartBtnHtml}
+          ${a.link ? `<a href="${a.link}" target="_blank" class="btn-alert-link">Ir para a Oferta ➔</a>` : ""}
+        </div>`;
 
         const dropBadge = a.price_drop_percentage && a.price_drop_percentage > 0
           ? `<span class="price-drop-badge">📉 Queda de ${a.price_drop_percentage}%!</span>`
@@ -584,7 +594,7 @@ async function loadAlerts() {
           <div class="alert-meta">
             <span>Score ${a.offer_score}/5</span>
             ${cats ? `<span>${cats}</span>` : ""}
-            ${a.timestamp ? `<span>${new Date(a.timestamp).toLocaleTimeString("pt-BR")}</span>` : ""}
+            ${timestampLabel ? `<span>${timestampLabel}</span>` : ""}
           </div>
           <div id="chart-container-${a.message_id}" class="alert-chart-container" style="display: none;"></div>
           ${actionHtml}
@@ -708,6 +718,26 @@ function renderMidBrands() {
 
 function bindEvents() {
   document.getElementById("alertsList")?.addEventListener("click", async (e) => {
+    const favoriteBtn = e.target.closest(".btn-alert-favorite");
+    if (favoriteBtn) {
+      const alertId = Number(favoriteBtn.dataset.alertId);
+      const favorite = favoriteBtn.dataset.favorite !== "true";
+      favoriteBtn.disabled = true;
+      try {
+        const res = await fetch(`${API_BASE_URL}/alerts/${alertId}/favorite`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ favorite }),
+        });
+        if (!res.ok) throw new Error("Não foi possível atualizar o favorito.");
+        await loadAlerts();
+      } catch {
+        favoriteBtn.disabled = false;
+        showToast("Não foi possível salvar o favorito. Tente novamente.", "error");
+      }
+      return;
+    }
+
     const chartBtn = e.target.closest(".btn-alert-chart");
     if (chartBtn) {
       const msgId = chartBtn.dataset.messageId;
@@ -777,7 +807,14 @@ function bindEvents() {
     loadAlerts();
   });
 
-  document.querySelectorAll(".tab-btn").forEach((btn) => {
+  document.getElementById("toggleFavoritesBtn")?.addEventListener("click", (e) => {
+    showFavoriteAlertsOnly = !showFavoriteAlertsOnly;
+    e.currentTarget.classList.toggle("active", showFavoriteAlertsOnly);
+    e.currentTarget.setAttribute("aria-pressed", String(showFavoriteAlertsOnly));
+    loadAlerts();
+  });
+
+  document.querySelectorAll(".tab-btn[data-category]").forEach((btn) => {
     btn.addEventListener("click", () => {
       document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
       btn.classList.add("active");
@@ -967,6 +1004,108 @@ function renderLevelPanel() {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Indicador de Conexão em Tempo Real
+// ---------------------------------------------------------------------------
+
+/**
+ * Distingue a disponibilidade da API da autorização do Telegram e do radar.
+ */
+async function updateConnectionStatus() {
+  const el = document.getElementById("connectionStatus");
+  const label = el?.querySelector(".connection-label");
+  if (!el || !label) return;
+
+  try {
+    const res = await fetch(`${API_BASE_URL}/watch/status`, { signal: AbortSignal.timeout(5000) });
+    if (!res.ok) throw new Error("non-ok");
+    const data = await res.json();
+
+    if (!data.telegram_connected || !data.telegram_authorized) {
+      el.className = "connection-status connection-status--warning";
+      label.textContent = data.telegram_connected ? "Login necessário" : "Telegram reconectando";
+      el.title = data.connection_error || "API disponível; sessão do Telegram precisa de atenção.";
+      return;
+    }
+
+    el.className = "connection-status connection-status--online";
+    label.textContent = data.active ? "Monitorando" : "Telegram conectado";
+    el.title = data.active ? "API e Telegram conectados; radar ativo." : "API e Telegram conectados.";
+  } catch {
+    el.className = "connection-status connection-status--offline";
+    label.textContent = "API indisponível";
+    el.title = "Não foi possível conectar à API.";
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Verificação de Apoiador APOIA.se
+// ---------------------------------------------------------------------------
+
+/**
+ * Consulta o endpoint /supporter/verify com o e-mail digitado pelo usuário.
+ * Exibe badge no header e resultado textual na área de verificação.
+ */
+async function verifySupporterStatus() {
+  const emailInput = document.getElementById("supporterEmailInput");
+  const resultEl = document.getElementById("supporterVerifyResult");
+  const badgeEl = document.getElementById("supporterBadge");
+  const btn = document.getElementById("verifySupporterBtn");
+
+  if (!emailInput || !resultEl) return;
+
+  const email = emailInput.value.trim();
+  if (!email || !email.includes("@")) {
+    resultEl.className = "supporter-verify-result result--error";
+    resultEl.textContent = "⚠️ Insira um e-mail válido.";
+    resultEl.style.display = "block";
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = "Verificando...";
+  resultEl.style.display = "none";
+
+  try {
+    const res = await fetch(`${API_BASE_URL}/supporter/verify`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email }),
+    });
+
+    const data = await res.json();
+
+    if (res.ok && data.active) {
+      const tierLabel = data.tier || "Apoiador";
+      const amount = data.amount ? ` (R$ ${data.amount.toLocaleString("pt-BR")}/mês)` : "";
+
+      resultEl.className = "supporter-verify-result result--active";
+      resultEl.innerHTML = `✅ Apoio ativo confirmado! Nível: <strong>${escapeHtml(tierLabel)}</strong>${escapeHtml(amount)}`;
+
+      // Revela o badge no header do card
+      if (badgeEl) {
+        badgeEl.textContent = `⭐ ${tierLabel}`;
+        badgeEl.style.display = "inline-flex";
+      }
+    } else if (res.ok && !data.active) {
+      resultEl.className = "supporter-verify-result result--inactive";
+      resultEl.textContent = "Nenhum apoio ativo encontrado para este e-mail. Que tal apoiar o projeto? 💜";
+      if (badgeEl) badgeEl.style.display = "none";
+    } else {
+      const detail = data.detail || "Erro desconhecido.";
+      resultEl.className = "supporter-verify-result result--error";
+      resultEl.textContent = `⚠️ ${detail}`;
+    }
+  } catch {
+    resultEl.className = "supporter-verify-result result--error";
+    resultEl.textContent = "⚠️ Não foi possível conectar ao servidor. Verifique se a API está rodando.";
+  } finally {
+    resultEl.style.display = "block";
+    btn.disabled = false;
+    btn.textContent = "Verificar";
+  }
+}
+
 async function init() {
   const auth = await new Promise((resolve) => {
     if (typeof chrome !== "undefined" && chrome.storage?.local) {
@@ -989,7 +1128,14 @@ async function init() {
 
   loadGroups();
   bindEvents();
-  
+
+  // Inicializa indicador de conexão e o mantém atualizado a cada 30s
+  updateConnectionStatus();
+  setInterval(updateConnectionStatus, 30_000);
+
+  // Botão de verificação de apoiador
+  document.getElementById("verifySupporterBtn")?.addEventListener("click", verifySupporterStatus);
+
   try {
     const res = await fetch(`${API_BASE_URL}/watch/status`);
     if (res.ok) {

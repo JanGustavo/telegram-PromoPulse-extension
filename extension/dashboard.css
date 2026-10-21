@@ -221,6 +221,208 @@ header {
 
 
 /* =============================================================================
+   4b. INDICADOR DE CONEXÃO EM TEMPO REAL
+============================================================================= */
+
+.connection-status {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 6px 14px;
+    border-radius: var(--radius-full);
+    font-size: 12px;
+    font-weight: 600;
+    border: 1px solid transparent;
+    transition: background var(--transition), border-color var(--transition), color var(--transition);
+    white-space: nowrap;
+    cursor: default;
+    user-select: none;
+}
+
+.connection-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    transition: background var(--transition), box-shadow var(--transition);
+}
+
+/* -- Estados -- */
+.connection-status--online {
+    background: rgba(16, 185, 129, 0.12);
+    border-color: rgba(16, 185, 129, 0.30);
+    color: var(--success);
+}
+.connection-status--online .connection-dot {
+    background: var(--success);
+    box-shadow: 0 0 8px var(--success);
+    animation: pulse-dot 2s ease-in-out infinite;
+}
+
+.connection-status--offline {
+    background: rgba(239, 68, 68, 0.12);
+    border-color: rgba(239, 68, 68, 0.30);
+    color: var(--error);
+}
+.connection-status--offline .connection-dot {
+    background: var(--error);
+}
+
+.connection-status--warning {
+    background: rgba(245, 158, 11, 0.12);
+    border-color: rgba(245, 158, 11, 0.32);
+    color: #f59e0b;
+}
+.connection-status--warning .connection-dot {
+    background: #f59e0b;
+    box-shadow: 0 0 7px rgba(245, 158, 11, 0.55);
+}
+
+.connection-status--checking {
+    background: rgba(148, 163, 184, 0.08);
+    border-color: rgba(148, 163, 184, 0.15);
+    color: var(--text-muted);
+}
+.connection-status--checking .connection-dot {
+    background: var(--text-muted);
+    animation: blink-dot 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse-dot {
+    0%, 100% { opacity: 1; box-shadow: 0 0 6px var(--success); }
+    50%       { opacity: 0.6; box-shadow: 0 0 14px var(--success); }
+}
+@keyframes blink-dot {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.3; }
+}
+
+
+/* =============================================================================
+   4c. CARD DE APOIO (APOIA.se)
+============================================================================= */
+
+.supporter-card {
+    margin-bottom: 20px;
+}
+
+.supporter-tiers {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin: 14px 0;
+}
+
+.supporter-tier-card {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+}
+
+.tier-icon {
+    font-size: 22px;
+    flex-shrink: 0;
+}
+
+.tier-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.tier-info strong {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-main);
+}
+
+.tier-info span {
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+.btn-apoia {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    text-decoration: none;
+    padding: 12px 20px;
+    margin-top: 4px;
+    background: linear-gradient(135deg, #7c3aed, #a855f7);
+    border-radius: var(--radius-md);
+    color: #fff;
+    font-weight: 600;
+    font-size: 14px;
+    transition: opacity var(--transition), transform var(--transition);
+}
+
+.btn-apoia:hover {
+    opacity: 0.88;
+    transform: translateY(-1px);
+}
+
+.supporter-verify-area {
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.supporter-input-row {
+    display: flex;
+    gap: 8px;
+}
+
+.supporter-input-row input {
+    flex: 1;
+}
+
+.supporter-verify-result {
+    padding: 10px 14px;
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+    font-weight: 500;
+}
+
+.supporter-verify-result.result--active {
+    background: rgba(16, 185, 129, 0.12);
+    border: 1px solid rgba(16, 185, 129, 0.30);
+    color: var(--success);
+}
+
+.supporter-verify-result.result--inactive {
+    background: rgba(148, 163, 184, 0.08);
+    border: 1px solid var(--border-color);
+    color: var(--text-muted);
+}
+
+.supporter-verify-result.result--error {
+    background: rgba(239, 68, 68, 0.10);
+    border: 1px solid rgba(239, 68, 68, 0.25);
+    color: var(--error);
+}
+
+.supporter-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 12px;
+    border-radius: var(--radius-full);
+    font-size: 12px;
+    font-weight: 700;
+    background: linear-gradient(135deg, #7c3aed, #a855f7);
+    color: #fff;
+    letter-spacing: 0.02em;
+}
+
+/* =============================================================================
    5. GRUPOS
 ============================================================================= */
 
@@ -1008,7 +1210,8 @@ textarea {
     transform: translateY(0);
 }
 
-.btn-alert-chart {
+.btn-alert-chart,
+.btn-alert-favorite {
     display: inline-flex;
     align-items: center;
     gap: 6px;
@@ -1023,12 +1226,20 @@ textarea {
     transition: all var(--transition);
 }
 
-.btn-alert-chart:hover {
+.btn-alert-favorite.active {
+    color: #fbbf24;
+    border-color: rgba(251, 191, 36, 0.45);
+    background: rgba(251, 191, 36, 0.10);
+}
+
+.btn-alert-chart:hover,
+.btn-alert-favorite:hover {
     background: rgba(255, 255, 255, 0.05);
     border-color: rgba(255, 255, 255, 0.2);
 }
 
-.light-theme .btn-alert-chart:hover {
+.light-theme .btn-alert-chart:hover,
+.light-theme .btn-alert-favorite:hover {
     background: rgba(15, 23, 42, 0.05);
     border-color: rgba(15, 23, 42, 0.2);
 }

@@ -33,6 +33,11 @@
           <div id="user">
             <div class="user-badge">Verificando...</div>
           </div>
+          <!-- Indicador de status de conexão em tempo real -->
+          <div id="connectionStatus" class="connection-status connection-status--checking" title="Status da conexão com o Telegram">
+            <span class="connection-dot"></span>
+            <span class="connection-label">Verificando</span>
+          </div>
           <button id="themeToggleBtn" class="btn-theme" title="Alternar Tema">🌓</button>
           <button id="logoutBtn" class="btn-logout">Sair</button>
         </div>
@@ -304,6 +309,7 @@
           <!-- Abas de categorias -->
           <div class="alerts-tabs">
             <button class="tab-btn active" data-category="all">Todos</button>
+            <button id="toggleFavoritesBtn" class="tab-btn" type="button" aria-pressed="false">☆ Favoritos</button>
             <button class="tab-btn" data-category="celulares">📱 Celulares</button>
             <button class="tab-btn" data-category="informatica">💻 Informática</button>
             <button class="tab-btn" data-category="games">🎮 Games</button>
@@ -325,6 +331,49 @@
         </div>
       </div>
       <!-- /.main-grid -->
+
+      <!-- ================================================================
+           CARD: APOIE O PROJETO (APOIA.se)
+      ================================================================ -->
+      <div class="card supporter-card">
+        <div class="card-header">
+          <h3>⭐ Apoie o PromoPulse</h3>
+          <div id="supporterBadge" class="supporter-badge" style="display:none;"></div>
+        </div>
+        <p class="level-desc">
+          Ajude a manter os servidores ativos e o radar de ofertas funcionando 24h. Torne-se apoiador e ganhe acesso a filtros avançados, badge exclusivo e suporte prioritário!
+        </p>
+
+        <div class="supporter-tiers">
+          <div class="supporter-tier-card">
+            <span class="tier-icon">🥈</span>
+            <div class="tier-info">
+              <strong>Apoiador Sênior</strong>
+              <span>R$ 10/mês — Filtros avançados + badge</span>
+            </div>
+          </div>
+          <div class="supporter-tier-card">
+            <span class="tier-icon">🥇</span>
+            <div class="tier-info">
+              <strong>Patrono PromoPulse</strong>
+              <span>R$ 25/mês — Suporte dedicado + menção</span>
+            </div>
+          </div>
+        </div>
+
+        <a href="https://apoia.se/promopulse" target="_blank" class="btn-primary btn-apoia">
+          💜 Quero Apoiar no APOIA.se
+        </a>
+
+        <div class="supporter-verify-area">
+          <label class="input-label" style="margin-top: 0;">Já é apoiador? Verifique seus benefícios:</label>
+          <div class="supporter-input-row">
+            <input id="supporterEmailInput" type="email" placeholder="Seu e-mail cadastrado no APOIA.se" />
+            <button id="verifySupporterBtn" class="btn-secondary">Verificar</button>
+          </div>
+          <div id="supporterVerifyResult" class="supporter-verify-result" style="display:none;"></div>
+        </div>
+      </div>
 
       <!-- ================================================================
            BOTÃO PRINCIPAL
@@ -349,6 +398,7 @@
       </div>
     </div>
     <!-- /.container -->
+    <script src="api-config.js"></script>
     <script src="dashboard.js"></script>
   </body>
 </html>

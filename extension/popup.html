@@ -39,12 +39,10 @@
         );
         color: var(--text-main);
         padding: 16px;
-        overflow: hidden;
       }
 
       .popup-container {
         background: var(--card-bg);
-        backdrop-filter: blur(12px);
         border: 1px solid var(--border-color);
         border-radius: 20px;
         padding: 20px;
@@ -53,14 +51,8 @@
       }
 
       @keyframes slideUp {
-        from {
-          opacity: 0;
-          transform: translateY(10px);
-        }
-        to {
-          opacity: 1;
-          transform: translateY(0);
-        }
+        from { opacity: 0; transform: translateY(10px); }
+        to   { opacity: 1; transform: translateY(0); }
       }
 
       .header {
@@ -81,17 +73,9 @@
         box-shadow: 0 4px 12px rgba(0, 136, 204, 0.3);
       }
 
-      .logo-icon svg {
-        width: 20px;
-        height: 20px;
-        fill: white;
-      }
+      .logo-icon svg { width: 20px; height: 20px; fill: white; }
 
-      h1 {
-        font-size: 18px;
-        font-weight: 700;
-        letter-spacing: -0.02em;
-      }
+      h1 { font-size: 18px; font-weight: 700; letter-spacing: -0.02em; }
 
       p {
         font-size: 13px;
@@ -118,35 +102,19 @@
         box-shadow: 0 4px 12px rgba(0, 136, 204, 0.2);
       }
 
-      .btn:hover {
-        background: var(--primary-hover);
-        transform: translateY(-1px);
-        box-shadow: 0 6px 16px rgba(0, 136, 204, 0.3);
-      }
-
-      .btn:active {
-        transform: translateY(0);
-      }
-
-      .btn:disabled {
-        opacity: 0.7;
-        cursor: not-allowed;
-      }
+      .btn:hover  { background: var(--primary-hover); transform: translateY(-1px); }
+      .btn:active { transform: translateY(0); }
+      .btn:disabled { opacity: 0.7; cursor: not-allowed; }
 
       .spinner {
-        width: 16px;
-        height: 16px;
-        border: 2px solid rgba(255, 255, 255, 0.3);
+        width: 16px; height: 16px;
+        border: 2px solid rgba(255,255,255,0.3);
         border-radius: 50%;
         border-top-color: white;
         animation: spin 0.8s linear infinite;
       }
 
-      @keyframes spin {
-        to {
-          transform: rotate(360deg);
-        }
-      }
+      @keyframes spin { to { transform: rotate(360deg); } }
 
       .footer {
         margin-top: 16px;
@@ -155,6 +123,50 @@
         color: var(--text-muted);
         opacity: 0.7;
       }
+
+      /* ── First-run modal ────────────────────────────────────── */
+      .hidden { display: none !important; }
+
+      .first-run-modal {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(2, 6, 23, 0.85);
+        padding: 16px;
+      }
+
+      .modal-card {
+        width: 100%;
+        background: #1e293b;
+        border: 1px solid var(--border-color);
+        border-radius: 16px;
+        padding: 20px;
+        text-align: center;
+        box-shadow: 0 20px 40px rgba(0,0,0,0.6);
+      }
+
+      .modal-card h2 { font-size: 15px; margin-bottom: 8px; }
+      .modal-card p  { font-size: 12px; color: var(--text-muted); margin-bottom: 16px; }
+
+      .modal-actions { display: flex; flex-direction: column; gap: 8px; }
+
+      .btn-dismiss {
+        background: transparent;
+        color: var(--text-muted);
+        border: 1px solid var(--border-color);
+        border-radius: 10px;
+        padding: 10px;
+        font-size: 13px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s;
+        width: 100%;
+      }
+      .btn-dismiss:hover    { background: rgba(255,255,255,0.05); color: var(--text-main); }
+      .btn-dismiss:disabled { opacity: 0.5; cursor: not-allowed; }
     </style>
   </head>
   <body>
@@ -162,24 +174,41 @@
       <div class="header">
         <div class="logo-icon">
           <svg viewBox="0 0 24 24">
-            <path
-              d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8c-.15 1.58-.8 5.42-1.13 7.19-.14.75-.42 1-.68 1.03-.58.05-1.02-.38-1.58-.75-.88-.58-1.38-.94-2.23-1.5-.99-.65-.35-1.01.22-1.59.15-.15 2.71-2.48 2.76-2.69.01-.03.01-.14-.07-.2-.08-.06-.19-.04-.27-.02-.11.02-1.93 1.23-5.46 3.62-.51.35-.98.52-1.4.51-.46-.01-1.35-.26-2.01-.48-.81-.27-1.45-.42-1.39-.88.03-.24.36-.48.99-.74 3.89-1.69 6.48-2.8 7.78-3.33 3.69-1.52 4.45-1.78 4.95-1.79.11 0 .36.03.52.16.13.1.17.24.19.34.02.07.02.21.01.27z"
-            />
+            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8c-.15 1.58-.8 5.42-1.13 7.19-.14.75-.42 1-.68 1.03-.58.05-1.02-.38-1.58-.75-.88-.58-1.38-.94-2.23-1.5-.99-.65-.35-1.01.22-1.59.15-.15 2.71-2.48 2.76-2.69.01-.03.01-.14-.07-.2-.08-.06-.19-.04-.27-.02-.11.02-1.93 1.23-5.46 3.62-.51.35-.98.52-1.4.51-.46-.01-1.35-.26-2.01-.48-.81-.27-1.45-.42-1.39-.88.03-.24.36-.48.99-.74 3.89-1.69 6.48-2.8 7.78-3.33 3.69-1.52 4.45-1.78 4.95-1.79.11 0 .36.03.52.16.13.1.17.24.19.34.02.07.02.21.01.27z"/>
           </svg>
         </div>
         <h1>Telegram PromoPulse</h1>
       </div>
 
-      <p>
-        Acesse seu painel de ofertas e gerencie seus grupos e filtros em tempo
-        real.
-      </p>
+      <p>Acesse seu painel de ofertas e gerencie seus grupos e filtros em tempo real.</p>
 
       <button id="openPanel" class="btn">Entrar no painel</button>
 
-      <div class="footer">v1.3.2 &bull; Telegram PromoPulse</div>
+      <div class="footer">v1.5.3 &bull; Telegram PromoPulse</div>
+    </div>
+
+    <!-- ── Modal de primeiro uso ────────────────────────────── -->
+    <div
+      id="firstRunModal"
+      class="first-run-modal hidden"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="firstRunTitle"
+      aria-describedby="firstRunDescription"
+    >
+      <div class="modal-card">
+        <h2 id="firstRunTitle">👋 Bem-vindo ao PromoPulse!</h2>
+        <p id="firstRunDescription">Conecte sua conta do Telegram para configurar o painel e começar a receber alertas de ofertas.</p>
+        <div class="modal-actions">
+          <button id="startTour" class="btn" type="button">Conectar Telegram</button>
+          <button id="dismissFirstRun" class="btn-dismiss" type="button">
+            Agora não
+          </button>
+        </div>
+      </div>
     </div>
 
     <script src="popup.js"></script>
+    <script src="exportTutorialLogic.js"></script>
   </body>
 </html>

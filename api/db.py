@@ -35,6 +35,7 @@ def init_db():
                 clean_title TEXT,
                 image_url TEXT,
                 price_drop_percentage INTEGER DEFAULT 0,
+                favorite INTEGER NOT NULL DEFAULT 0,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
@@ -50,8 +51,15 @@ def init_db():
         except sqlite3.OperationalError:
             pass  # column already exists
 
+        try:
+            conn.execute("ALTER TABLE alerts ADD COLUMN favorite INTEGER NOT NULL DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass  # column already exists
+
         conn.execute("CREATE INDEX IF NOT EXISTS idx_alerts_price ON alerts(extracted_price)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_alerts_message_id ON alerts(message_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_alerts_group_message ON alerts(group_id, message_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_alerts_favorite_id ON alerts(favorite, id DESC)")
         conn.commit()
 
 
@@ -126,12 +134,27 @@ def save_alert(alert: dict) -> int:
     extracted_price = alert.get("extracted_price")
     price_drop = 0
 
-    if clean_title and clean_title != "Produto não identificado" and extracted_price is not None:
-        min_price = get_min_historical_price(clean_title)
-        if min_price is not None and extracted_price < min_price:
-            price_drop = round(((min_price - extracted_price) / min_price) * 100)
-
     with get_connection() as conn:
+        # Serializa a verificação e a gravação para não duplicar a mesma mensagem
+        # quando o Telegram reentrega um evento após uma reconexão.
+        conn.execute("BEGIN IMMEDIATE")
+        existing = conn.execute(
+            "SELECT id FROM alerts WHERE group_id = ? AND message_id = ? ORDER BY id DESC LIMIT 1",
+            (alert["group_id"], alert["message_id"]),
+        ).fetchone()
+        if existing:
+            conn.commit()
+            return int(existing["id"])
+
+        if clean_title and clean_title != "Produto não identificado" and extracted_price is not None:
+            row_min = conn.execute(
+                "SELECT MIN(extracted_price) FROM alerts WHERE clean_title = ? AND extracted_price IS NOT NULL",
+                (clean_title,),
+            ).fetchone()
+            min_price = row_min[0] if row_min else None
+            if min_price is not None and extracted_price < min_price:
+                price_drop = round(((min_price - extracted_price) / min_price) * 100)
+
         cursor = conn.execute(
             """
             INSERT INTO alerts (
@@ -155,8 +178,8 @@ def save_alert(alert: dict) -> int:
             ),
         )
         conn.execute("""
-            DELETE FROM alerts WHERE id NOT IN (
-                SELECT id FROM alerts ORDER BY id DESC LIMIT 1000
+            DELETE FROM alerts WHERE favorite = 0 AND id NOT IN (
+                SELECT id FROM alerts WHERE favorite = 0 ORDER BY id DESC LIMIT 1000
             )
         """)
         conn.commit()
@@ -214,12 +237,23 @@ def clear_alerts():
         conn.commit()
 
 
+def set_alert_favorite(alert_id: int, favorite: bool) -> bool | None:
+    with get_connection() as conn:
+        exists = conn.execute("SELECT 1 FROM alerts WHERE id = ?", (alert_id,)).fetchone()
+        if not exists:
+            return None
+        conn.execute("UPDATE alerts SET favorite = ? WHERE id = ?", (int(favorite), alert_id))
+        conn.commit()
+        return favorite
+
+
 def get_alerts(
     limit: int = 50,
     min_price: float | None = None,
     max_price: float | None = None,
     category: str | None = None,
     q: str | None = None,
+    favorites_only: bool = False,
 ) -> list[dict]:
     query = "SELECT * FROM alerts WHERE 1=1"
     params = []
@@ -241,6 +275,9 @@ def get_alerts(
         params.append(f"%{q}%")
         params.append(f"%{q}%")
 
+    if favorites_only:
+        query += " AND favorite = 1"
+
     query += " ORDER BY id DESC LIMIT ?"
     params.append(limit)
 
@@ -254,6 +291,7 @@ def get_alerts(
                 cats = []
             alerts.append(
                 {
+                    "id": row["id"],
                     "group_id": row["group_id"],
                     "group_title": row["group_title"],
                     "username": row["username"],
@@ -268,6 +306,8 @@ def get_alerts(
                     "price_drop_percentage": (
                         row["price_drop_percentage"] if "price_drop_percentage" in row.keys() else 0
                     ),
+                    "favorite": bool(row["favorite"]) if "favorite" in row.keys() else False,
+                    "created_at": row["created_at"],
                 }
             )
 
